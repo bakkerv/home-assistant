@@ -20,3 +20,5 @@ PLATFORMS = [
     Platform.SENSOR,
     Platform.SWITCH,
 ]
+
+SWITCH_ALL_CHANNELS = 30
