@@ -116,5 +116,6 @@ class EnOceanBinarySensor(EnOceanEntity, BinarySensorEntity):
                 "pushed": pushed,
                 "which": self.which,
                 "onoff": self.onoff,
+                "entity_id": self.entity_id,
             },
         )
