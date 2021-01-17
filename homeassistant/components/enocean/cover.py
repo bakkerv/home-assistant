@@ -245,6 +245,15 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
         """Flag supported features."""
         return VLD_SUPPORT_ENOCEAN
 
+    @property
+    def is_closed(self):
+        """Return if the cover is closed or not."""
+        if self.current_position is None:
+            self.request_current_state()
+            return None
+        return self.current_cover_position == 0
+
+
     def value_changed(self, packet):
         """Update the internal state of this device."""
         if packet.data[0] == 0xD2:
