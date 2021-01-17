@@ -18,6 +18,7 @@ from homeassistant.components.cover import (
 )
 from homeassistant.const import CONF_ID, CONF_NAME
 import homeassistant.helpers.config_validation as cv
+from .const import COVER_ALL_CHANNELS
 
 from .device import EnOceanEntity
 
@@ -25,15 +26,23 @@ from .device import EnOceanEntity
 _LOGGER = logging.getLogger(__name__)
 
 CONF_SENDER_ID = "sender_id"
+CONF_USE_VLD = "use_vld"
+CONF_CHANNEL = "channel"
 
 DEFAULT_NAME = "EnOcean Cover"
+DEFAULT_USE_VLD = False
 SUPPORT_ENOCEAN = SUPPORT_CLOSE | SUPPORT_OPEN | SUPPORT_SET_POSITION | SUPPORT_STOP
+VLD_SUPPORT_ENOCEAN = SUPPORT_SET_POSITION | SUPPORT_STOP
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Optional(CONF_ID, default=[]): vol.All(cv.ensure_list, [vol.Coerce(int)]),
         vol.Required(CONF_SENDER_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+        vol.Optional(CONF_USE_VLD, default=DEFAULT_USE_VLD): cv.boolean,
+        vol.Optional(CONF_CHANNEL, default=0): vol.All(
+            int, vol.Range(min=0, max=15)
+        ),  # Default all channels
     }
 )
 
@@ -48,9 +57,13 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     sender_id = config.get(CONF_SENDER_ID)
     dev_name = config.get(CONF_NAME)
     dev_id = config.get(CONF_ID)
+    use_vld = config.get(CONF_USE_VLD)
+    channel = config.get(CONF_CHANNEL)
 
-    add_entities([EnOceanCover(sender_id, dev_id, dev_name)])
-
+    if use_vld:
+        add_entities([EnOceanVldCover(sender_id, dev_id, dev_name, channel)])
+    else:
+        add_entities([EnOceanCover(sender_id, dev_id, dev_name)])
 
 class EnOceanCover(EnOceanEntity, CoverEntity):
     """Representation of an EnOcean cover source."""
@@ -206,6 +219,98 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
             SSF=0,  # Send new status
             PAF=0,  # No position and angle flag
             SMF=0,  # No service mode
+        )
+        _LOGGER.debug("Requesting current state")
+        self.send_packet(packet)
+
+
+
+class EnOceanVldCover(EnOceanEntity, CoverEntity):
+    """Representation of an EnOcean cover source."""
+
+    def __init__(self, sender_id, dev_id, dev_name, channel):
+        """Initialize the EnOcean cover source."""
+        super().__init__(dev_id, dev_name)
+        self.sender_id = sender_id
+        self.current_position = None
+        self.channel = channel
+
+    @property
+    def name(self):
+        """Return the name of the device if any."""
+        return self.dev_name
+
+    @property
+    def supported_features(self):
+        """Flag supported features."""
+        return VLD_SUPPORT_ENOCEAN
+
+    def value_changed(self, packet):
+        """Update the internal state of this device."""
+        if packet.data[0] == 0xD2:
+            packet.parse_eep(0x05, 0x00)
+            channel = packet.parsed["CHN"]["raw_value"]
+            if (
+                    channel != self.channel and self.channel != COVER_ALL_CHANNELS
+                ):  # not my channel nor all channels
+                return
+            if "POS" in packet.parsed:
+                # Position data available
+                self.current_position = packet.parsed["POS"]["raw_value"]
+            self.schedule_update_ha_state()
+
+    @property
+    def current_cover_position(self):
+        """Return current position of cover. None is unknown, 0 is closed, 100 is fully open."""
+        if self.current_position is None:
+            self.request_current_state()
+            return 100
+        return 100 - self.current_position
+
+    def set_cover_position(self, **kwargs):
+        """Move the cover to a specific position."""
+        pos = kwargs[ATTR_POSITION]
+        if pos < 0 or pos > 100:
+            return
+        packet = RadioPacket.create(
+            rorg=RORG.VLD,
+            rorg_func=0x05,
+            rorg_type=0x00,
+            sender=self.sender_id,
+            destination=self.dev_id,
+            command=1,  # Set position & angle
+            POS=100 - pos,  # Set position
+            ANG=127,  # No angle change
+            REPO=0,   # Go directly to position/angle
+            LOCK=0,   # No change
+            CHN=self.channel # set channel
+        )
+        self.send_packet(packet)
+
+    def stop_cover(self, **kwargs):
+        """Stop the cover."""
+        packet = RadioPacket.create(
+            rorg=RORG.VLD,
+            rorg_func=0x05,
+            rorg_type=0x00,
+            sender=self.sender_id,
+            destination=self.dev_id,
+            command=2,  # Stop
+            CHN = self.channel, # set channel
+        )
+        self.send_packet(packet)
+
+    def request_current_state(self):
+        """Request current state."""
+
+        packet = RadioPacket.create(
+            rorg=RORG.VLD,
+            rorg_func=0x05,
+            rorg_type=0x00,
+            sender=self.sender_id,
+            destination=self.dev_id,
+            command=3,  # Query Position & Angle
+            CHN = self.channel, # set channel
         )
         _LOGGER.debug("Requesting current state")
         self.send_packet(packet)
