@@ -342,8 +342,8 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
 
     def open_cover(self, **kwargs: Any) -> None:
         """Open the cover."""
-        self.set_cover_position(ATTR_POSITION=100)
+        self.set_cover_position(position=100)
 
     def close_cover(self, **kwargs: Any) -> None:
         """Close cover."""
-        self.set_cover_position(ATTR_POSITION=0)
+        self.set_cover_position(position=0)
