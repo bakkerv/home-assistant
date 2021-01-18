@@ -40,9 +40,6 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Required(CONF_SENDER_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
         vol.Optional(CONF_USE_VLD, default=DEFAULT_USE_VLD): cv.boolean,
-        vol.Optional(CONF_CHANNEL, default=0): vol.All(
-            int, vol.Range(min=0, max=15)
-        ),  # Default all channels
     }
 )
 
@@ -64,6 +61,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         add_entities([EnOceanVldCover(sender_id, dev_id, dev_name, channel)])
     else:
         add_entities([EnOceanCover(sender_id, dev_id, dev_name)])
+
 
 class EnOceanCover(EnOceanEntity, CoverEntity):
     """Representation of an EnOcean cover source."""
@@ -224,7 +222,6 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
         self.send_packet(packet)
 
 
-
 class EnOceanVldCover(EnOceanEntity, CoverEntity):
     """Representation of an EnOcean cover source."""
 
@@ -233,6 +230,7 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
         super().__init__(dev_id, dev_name)
         self.sender_id = sender_id
         self.current_position = None
+        self.target_position = None
         self.channel = channel
 
     @property
@@ -243,7 +241,7 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
     @property
     def supported_features(self):
         """Flag supported features."""
-        return VLD_SUPPORT_ENOCEAN
+        return SUPPORT_ENOCEAN
 
     @property
     def is_closed(self):
@@ -253,19 +251,15 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
             return None
         return self.current_cover_position == 0
 
-
     def value_changed(self, packet):
         """Update the internal state of this device."""
         if packet.data[0] == 0xD2:
             packet.parse_eep(0x05, 0x00)
-            channel = packet.parsed["CHN"]["raw_value"]
-            if (
-                    channel != self.channel and self.channel != COVER_ALL_CHANNELS
-                ):  # not my channel nor all channels
-                return
             if "POS" in packet.parsed:
                 # Position data available
                 self.current_position = packet.parsed["POS"]["raw_value"]
+                if self.target_position is None:
+                    self.target_position = self.current_position
             self.schedule_update_ha_state()
 
     @property
@@ -273,7 +267,7 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
         """Return current position of cover. None is unknown, 0 is closed, 100 is fully open."""
         if self.current_position is None:
             self.request_current_state()
-            return 100
+            return None
         return 100 - self.current_position
 
     def set_cover_position(self, **kwargs):
@@ -290,11 +284,12 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
             command=1,  # Set position & angle
             POS=100 - pos,  # Set position
             ANG=127,  # No angle change
-            REPO=0,   # Go directly to position/angle
-            LOCK=0,   # No change
-            CHN=self.channel # set channel
+            REPO=0,  # Go directly to position/angle
+            LOCK=0,  # No change
+            CHN=0,  # set channel, fixed to channel 1
         )
         self.send_packet(packet)
+        self.target_position = pos
 
     def stop_cover(self, **kwargs):
         """Stop the cover."""
@@ -305,9 +300,10 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
             sender=self.sender_id,
             destination=self.dev_id,
             command=2,  # Stop
-            CHN = self.channel, # set channel
+            CHN=0,  # set channel, fixed to channel 1
         )
         self.send_packet(packet)
+        self.target_position = None
 
     def request_current_state(self):
         """Request current state."""
@@ -319,7 +315,35 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
             sender=self.sender_id,
             destination=self.dev_id,
             command=3,  # Query Position & Angle
-            CHN = self.channel, # set channel
+            CHN=0,  # set channel, fixed to channel 1
         )
         _LOGGER.debug("Requesting current state")
         self.send_packet(packet)
+
+    @property
+    def is_opening(self):
+        """Return if the cover is opening or not."""
+        if self.current_cover_position is None:
+            self.request_current_state()
+            return None
+        if self.target_position is None:
+            return False
+        return self.current_cover_position < self.target_position
+
+    @property
+    def is_closing(self):
+        """Return if the cover is closing or not."""
+        if self.current_cover_position is None:
+            self.request_current_state()
+            return None
+        if self.target_position is None:
+            return False
+        return self.current_cover_position > self.target_position
+
+    def open_cover(self, **kwargs: Any) -> None:
+        """Open the cover."""
+        self.set_cover_position(ATTR_POSITION=100)
+
+    def close_cover(self, **kwargs: Any) -> None:
+        """Close cover."""
+        self.set_cover_position(ATTR_POSITION=0)
