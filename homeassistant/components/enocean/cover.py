@@ -246,8 +246,7 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
     @property
     def is_closed(self):
         """Return if the cover is closed or not."""
-        if self.current_position is None:
-            self.request_current_state()
+        if self.current_cover_position is None:
             return None
         return self.current_cover_position == 0
 
@@ -258,8 +257,6 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
             if "POS" in packet.parsed:
                 # Position data available
                 self.current_position = packet.parsed["POS"]["raw_value"]
-                if self.target_position is None:
-                    self.target_position = self.current_position
             self.schedule_update_ha_state()
 
     @property
@@ -324,7 +321,6 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
     def is_opening(self):
         """Return if the cover is opening or not."""
         if self.current_cover_position is None:
-            self.request_current_state()
             return None
         if self.target_position is None:
             return False
@@ -334,7 +330,6 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
     def is_closing(self):
         """Return if the cover is closing or not."""
         if self.current_cover_position is None:
-            self.request_current_state()
             return None
         if self.target_position is None:
             return False
