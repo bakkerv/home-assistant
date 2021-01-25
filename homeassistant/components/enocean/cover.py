@@ -16,12 +16,11 @@ from homeassistant.components.cover import (
     SUPPORT_STOP,
     CoverEntity,
 )
-from homeassistant.const import CONF_ID, CONF_NAME
+from homeassistant.const import CONF_COVERS, CONF_DEVICES, CONF_ID, CONF_NAME, CONF_TYPE
 import homeassistant.helpers.config_validation as cv
 from .const import COVER_ALL_CHANNELS
 
 from .device import EnOceanEntity
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,14 +33,18 @@ DEFAULT_USE_VLD = False
 SUPPORT_ENOCEAN = SUPPORT_CLOSE | SUPPORT_OPEN | SUPPORT_SET_POSITION | SUPPORT_STOP
 VLD_SUPPORT_ENOCEAN = SUPPORT_SET_POSITION | SUPPORT_STOP
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Optional(CONF_ID, default=[]): vol.All(cv.ensure_list, [vol.Coerce(int)]),
-        vol.Required(CONF_SENDER_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Optional(CONF_USE_VLD, default=DEFAULT_USE_VLD): cv.boolean,
-    }
-)
+
+ENOCEAN_COVER_SCHEMA_DATA = {
+    vol.Optional(CONF_ID, default=[]): vol.All(cv.ensure_list, [vol.Coerce(int)]),
+    vol.Required(CONF_SENDER_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
+    vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+    vol.Optional(CONF_USE_VLD, default=DEFAULT_USE_VLD): cv.boolean,
+}
+
+ENOCEAN_COVER_SCHEMA = vol.Schema(ENOCEAN_COVER_SCHEMA_DATA)
+
+
+PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(ENOCEAN_COVER_SCHEMA_DATA)
 
 STATE_NO_STATE = 0
 STATE_STOPPED = 1
@@ -49,8 +52,25 @@ STATE_OPENING = 2
 STATE_CLOSING = 3
 
 
-def setup_platform(hass, config, add_entities, discovery_info=None):
-    """Set up the EnOcean cover platform."""
+async def async_setup_entry(
+    hass,
+    config_entry,
+    async_add_entities,
+):
+    """Set up config entry."""
+
+    # Add cover from config file
+    config_data = config_entry.data
+    entities = []
+    for id, entity_info in config_data[CONF_COVERS].items():
+        entity = create_entity_from_config(hass, entity_info)
+        entities.append(entity)
+
+    async_add_entities(entities)
+
+
+def create_entity_from_config(hass, config):
+    """Create cover entity from configuration"""
     sender_id = config.get(CONF_SENDER_ID)
     dev_name = config.get(CONF_NAME)
     dev_id = config.get(CONF_ID)
@@ -58,9 +78,14 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     channel = config.get(CONF_CHANNEL)
 
     if use_vld:
-        add_entities([EnOceanVldCover(sender_id, dev_id, dev_name, channel)])
+        return EnOceanVldCover(sender_id, dev_id, dev_name, channel)
     else:
-        add_entities([EnOceanCover(sender_id, dev_id, dev_name)])
+        return EnOceanCover(sender_id, dev_id, dev_name)
+
+
+def setup_platform(hass, config, add_entities, discovery_info=None):
+    """Set up the EnOcean cover platform."""
+    return add_entities([create_entity_from_config(hass, config)])
 
 
 class EnOceanCover(EnOceanEntity, CoverEntity):
@@ -221,6 +246,20 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
         _LOGGER.debug("Requesting current state")
         self.send_packet(packet)
 
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {
+                # Serial numbers are unique identifiers within a specific domain
+                (enocean.DOMAIN, self.unique_id)
+            },
+            "name": self.name,
+        }
+
+    @property
+    def unique_id(self):
+        return "{0}-{1}".format("cover", "-".join(map(lambda x: hex(x), self.dev_id)))
+
 
 class EnOceanVldCover(EnOceanEntity, CoverEntity):
     """Representation of an EnOcean cover source."""
@@ -342,3 +381,19 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
     def close_cover(self, **kwargs: Any) -> None:
         """Close cover."""
         self.set_cover_position(position=0)
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {
+                # Serial numbers are unique identifiers within a specific domain
+                (enocean.DOMAIN, self.unique_id)
+            },
+            "name": self.name,
+        }
+
+    @property
+    def unique_id(self):
+        return "{0}-{1}".format(
+            "vld-cover", "-".join(map(lambda x: hex(x), self.dev_id))
+        )

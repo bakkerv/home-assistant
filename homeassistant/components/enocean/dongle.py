@@ -44,6 +44,7 @@ class EnOceanDongle:
         if self.dispatcher_disconnect_handle:
             self.dispatcher_disconnect_handle()
             self.dispatcher_disconnect_handle = None
+        self._communicator.stop()
 
     def _send_message_callback(self, command):
         """Send a command through the EnOcean dongle."""

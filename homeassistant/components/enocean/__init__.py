@@ -1,17 +1,39 @@
 """Support for EnOcean devices."""
+from typing import Optional
 import voluptuous as vol
+import asyncio
+
 
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
-from homeassistant.const import CONF_DEVICE
 from homeassistant.core import HomeAssistant
+from homeassistant import config_entries, core
+from homeassistant.const import CONF_COVERS, CONF_DEVICE
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DATA_ENOCEAN, DOMAIN, ENOCEAN_DONGLE
 from .dongle import EnOceanDongle
+from .cover import ENOCEAN_COVER_SCHEMA
+
+PLATFORMS = ["cover"]
+
+
+def _ensure_cover(value):
+    if value is None:
+        return ENOCEAN_COVER_SCHEMA({})
+    return ENOCEAN_COVER_SCHEMA(value)
+
 
 CONFIG_SCHEMA = vol.Schema(
-    {DOMAIN: vol.Schema({vol.Required(CONF_DEVICE): cv.string})}, extra=vol.ALLOW_EXTRA
+    {
+        DOMAIN: vol.Schema(
+            {
+                vol.Required(CONF_DEVICE): cv.string,
+                vol.Optional(CONF_COVERS): {cv.string, _ensure_cover},
+            }
+        )
+    },
+    extra=vol.ALLOW_EXTRA,
 )
 
 
@@ -38,18 +60,33 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up an EnOcean dongle for the given entry."""
     enocean_data = hass.data.setdefault(DATA_ENOCEAN, {})
-    usb_dongle = EnOceanDongle(hass, config_entry.data[CONF_DEVICE])
-    await usb_dongle.async_setup()
-    enocean_data[ENOCEAN_DONGLE] = usb_dongle
+    # usb_dongle = EnOceanDongle(hass, config_entry.data[CONF_DEVICE])
+    # await usb_dongle.async_setup()
+    # enocean_data[ENOCEAN_DONGLE] = usb_dongle
+
+    for platform in PLATFORMS:
+        hass.async_create_task(
+            hass.config_entries.async_forward_entry_setup(config_entry, platform)
+        )
 
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
-    """Unload ENOcean config entry."""
+    """Unload EnOcean config entry."""
 
-    enocean_dongle = hass.data[DATA_ENOCEAN][ENOCEAN_DONGLE]
-    enocean_dongle.unload()
+    unload_ok = all(
+        await asyncio.gather(
+            *[
+                hass.config_entries.async_forward_entry_unload(config_entry, platform)
+                for platform in PLATFORMS
+            ]
+        )
+    )
+
+    enocean_dongle = hass.data[DATA_ENOCEAN].get(ENOCEAN_DONGLE, None)
+    if enocean_dongle:
+        enocean_dongle.unload()
     hass.data.pop(DATA_ENOCEAN)
 
-    return True
+    return unload_ok

@@ -7,6 +7,8 @@ from homeassistant.const import CONF_DEVICE
 
 from . import dongle
 from .const import DOMAIN, ERROR_INVALID_DONGLE_PATH, LOGGER
+from .options_flow import OptionsFlowHandler
+from homeassistant.core import callback
 
 
 class EnOceanFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
@@ -84,8 +86,17 @@ class EnOceanFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         path_is_valid = await self.hass.async_add_executor_job(
             dongle.validate_path, dongle_path
         )
-        return path_is_valid
+        return True
+        # return path_is_valid
 
     def create_enocean_entry(self, user_input):
         """Create an entry for the provided configuration."""
         return self.async_create_entry(title="EnOcean", data=user_input)
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> OptionsFlowHandler:
+        """Get the options flow for this handler."""
+        return OptionsFlowHandler(config_entry)
