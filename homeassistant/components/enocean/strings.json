@@ -24,11 +24,14 @@
   },
   "options": {
     "step": {
-        "init": {
+        "select_cover": {
             "data": {
                 "covers": "Select cover to configure"
             },
             "title": "EnOcean Options"
+        },
+        "init": {
+          "title": "Select your action"
         },
         "set_cover_options": {
             "title": "Edit cover",
@@ -38,10 +41,21 @@
                 "name": "Name"
             }
 
+        },
+        "create_cover": {
+          "title": "Provide cover data",
+          "data": {
+            "id": "Device ID",
+            "sender_id": "Sender ID",
+            "use_vld": "Use VLD datagrams",
+            "name": "Name"
+          }
         }
     },
     "error": {
-        "invalid_sender_id": "Invalid sender ID"
+        "invalid_sender_id": "Invalid sender ID",
+        "invalid_id": "Invalid  ID",
+        "id_in_use": "ID already defined"
     }
 }
 }

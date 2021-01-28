@@ -3,6 +3,7 @@ from homeassistant.const import CONF_COVERS, CONF_DEVICE, CONF_ID, CONF_NAME
 from homeassistant import config_entries, exceptions
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import callback
+from enocean.utils import combine_hex
 import copy
 
 
@@ -29,6 +30,12 @@ from .cover import (
 _LOGGER = logging.getLogger(__name__)
 
 
+EDIT_KEY = "edit_selection"
+ADD_COVER = "Add cover"
+EDIT_COVER = "Edit cover"
+# EDIT_SETTINGS = "Arming Settings"
+
+
 class OptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         super().__init__()
@@ -52,6 +59,67 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         """Manage the options."""
         if user_input is not None:
+            if user_input[EDIT_KEY] == EDIT_COVER:
+                return await self.async_step_select_cover()
+            if user_input[EDIT_KEY] == ADD_COVER:
+                return await self.async_step_create_cover()
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(EDIT_KEY, default=EDIT_COVER): vol.In(
+                        [ADD_COVER, EDIT_COVER]
+                    )
+                },
+            ),
+        )
+
+    async def async_step_create_cover(self, user_input=None):
+        """Add new cover step"""
+        errors = {}
+        if user_input is not None:
+            dev_id = self.device_id_or_none(user_input[CONF_ID])
+            if dev_id is None:
+                errors[CONF_ID] = "invalid_id"
+            sender_id = self.device_id_or_none(user_input[CONF_SENDER_ID])
+            if sender_id is None:
+                errors[CONF_SENDER_ID] = "invalid_sender_id"
+            try:
+                if not errors:
+                    data = ENOCEAN_COVER_SCHEMA(
+                        {
+                            CONF_SENDER_ID: sender_id,
+                            CONF_NAME: user_input[CONF_NAME],
+                            CONF_USE_VLD: user_input[CONF_USE_VLD],
+                            CONF_ID: dev_id,
+                        }
+                    )
+            except vol.error.Error as error:
+                errors.update(error.errors)
+            if not errors:
+                self.update_config_data(covers={combine_hex(dev_id): data})
+                return self.async_create_entry(title="", data=None)
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_ID, description={"suggested_value": "0xff,0xff,0xff,0xff"}
+                ): cv.string,
+                vol.Required(
+                    CONF_SENDER_ID,
+                    description={"suggested_value": "0xff,0xff,0xff,0xff"},
+                ): cv.string,
+                vol.Required(CONF_NAME): cv.string,
+                vol.Optional(CONF_USE_VLD, default=False): cv.boolean,
+            }
+        )
+        return self.async_show_form(
+            step_id="create_cover", data_schema=schema, errors=errors
+        )
+
+    async def async_step_select_cover(self, user_input=None):
+        """Manage the options."""
+        if user_input is not None:
             if CONF_COVERS in user_input:
                 self._selected_device_entry_id = user_input[CONF_COVERS]
                 return await self.async_step_set_cover_options()
@@ -72,7 +140,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         }
 
         return self.async_show_form(
-            step_id="init",
+            step_id="select_cover",
             data_schema=vol.Schema(
                 {
                     vol.Optional(CONF_COVERS): vol.In(configure_covers),
@@ -100,18 +168,24 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         self._current_dev_config = None
         self._current_dev_config_key = None
 
+    def device_id_or_none(self, input):
+        sender_id = []
+        try:
+            sender_id = list(map(lambda x: int(x, 16), input.split(",")))
+            # should be a valid number as well
+            if not all(map(lambda x: x >= 0 and x <= 255, sender_id)):
+                return None
+        except ValueError:
+            return None
+        return sender_id
+
     async def async_step_set_cover_options(self, user_input=None):
         errors = {}
         self.find_matching_config()
         if user_input is not None and self._current_dev_config_key is not None:
-            sender_id = ""
-            try:
-                sender_id = list(
-                    map(lambda x: int(x, 16), user_input[CONF_SENDER_ID].split(","))
-                )
-            except ValueError:
+            sender_id = self.device_id_or_none(user_input[CONF_SENDER_ID])
+            if sender_id is None:
                 errors[CONF_SENDER_ID] = "invalid_sender_id"
-
             name = user_input[CONF_NAME]
             use_vld = user_input[CONF_USE_VLD]
             try:
@@ -141,14 +215,14 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             )
                         ),
                     ): cv.string,
-                    vol.Optional(
-                        CONF_USE_VLD,
-                        default=self._current_dev_config.get(CONF_USE_VLD, False),
-                    ): cv.boolean,
                     vol.Required(
                         CONF_NAME,
                         default=self._current_dev_config[CONF_NAME],
                     ): cv.string,
+                    vol.Optional(
+                        CONF_USE_VLD,
+                        default=self._current_dev_config.get(CONF_USE_VLD, False),
+                    ): cv.boolean,
                 }
             )
 
@@ -161,7 +235,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     def update_config_data(self, global_options=None, covers=None):
         """Update data in ConfigEntry."""
         entry_data = self._config_entry.data.copy()
-        entry_data[CONF_COVERS] = copy.deepcopy(self._config_entry.data[CONF_COVERS])
+        entry_data[CONF_COVERS] = copy.deepcopy(
+            self._config_entry.data.get(CONF_COVERS, {})
+        )
         if covers:
             for id, options in covers.items():
                 if options is None:

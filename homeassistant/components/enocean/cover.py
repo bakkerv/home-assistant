@@ -4,7 +4,9 @@ from typing import Any
 
 from enocean.protocol.constants import RORG
 from enocean.protocol.packet import RadioPacket
+from enocean.utils import combine_hex
 import voluptuous as vol
+
 
 from homeassistant.components import enocean
 from homeassistant.components.cover import (
@@ -62,6 +64,8 @@ async def async_setup_entry(
     # Add cover from config file
     config_data = config_entry.data
     entities = []
+    if CONF_COVERS not in config_data:
+        return
     for id, entity_info in config_data[CONF_COVERS].items():
         entity = create_entity_from_config(hass, entity_info)
         entities.append(entity)
@@ -258,7 +262,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
 
     @property
     def unique_id(self):
-        return "{0}-{1}".format("cover", "-".join(map(lambda x: hex(x), self.dev_id)))
+        return "{0}-{1}".format("cover", combine_hex(self.dev_id))
 
 
 class EnOceanVldCover(EnOceanEntity, CoverEntity):
@@ -394,6 +398,4 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
 
     @property
     def unique_id(self):
-        return "{0}-{1}".format(
-            "vld-cover", "-".join(map(lambda x: hex(x), self.dev_id))
-        )
+        return "{0}-{1}".format("cover", combine_hex(self.dev_id))
