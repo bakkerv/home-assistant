@@ -3,7 +3,7 @@ from homeassistant.const import CONF_COVERS, CONF_DEVICE, CONF_ID, CONF_NAME
 from homeassistant import config_entries, exceptions
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import callback
-from enocean.utils import combine_hex
+from enocean.utils import to_hex_string
 import copy
 
 
@@ -53,7 +53,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         for id in identifiers:
             if len(id) == 2 and expected_type in id[1]:
                 identifier_string = id[1]
-                return identifier_string.split("-")[1:]
+                return identifier_string.split("-")[1]
         return None
 
     async def async_step_init(self, user_input=None):
@@ -98,7 +98,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             except vol.error.Error as error:
                 errors.update(error.errors)
             if not errors:
-                self.update_config_data(covers={combine_hex(dev_id): data})
+                self.update_config_data(covers={to_hex_string(dev_id): data})
                 return self.async_create_entry(title="", data=None)
         schema = vol.Schema(
             {
@@ -155,7 +155,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             lambda x: x.id == device_id, self._device_entries
         ):
             # self._config_entry.data[CONF_COVERS]
-            id = ",".join(self.get_enocean_id(matching_device.identifiers, "cover"))
+            id = self.get_enocean_id(matching_device.identifiers, "cover")
             if id in self._config_entry.data[CONF_COVERS]:
                 # for matching_config in filter(
                 #     lambda x: list(map(lambda x: hex(x), x[CONF_ID]))

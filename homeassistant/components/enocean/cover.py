@@ -4,7 +4,7 @@ from typing import Any
 
 from enocean.protocol.constants import RORG
 from enocean.protocol.packet import RadioPacket
-from enocean.utils import combine_hex
+from enocean.utils import to_hex_string
 import voluptuous as vol
 
 
@@ -262,7 +262,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
 
     @property
     def unique_id(self):
-        return "{0}-{1}".format("cover", combine_hex(self.dev_id))
+        return "{0}-{1}".format("cover", to_hex_string(self.dev_id))
 
 
 class EnOceanVldCover(EnOceanEntity, CoverEntity):
@@ -398,4 +398,4 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
 
     @property
     def unique_id(self):
-        return "{0}-{1}".format("cover", combine_hex(self.dev_id))
+        return "{0}-{1}".format("cover", to_hex_string(self.dev_id))
