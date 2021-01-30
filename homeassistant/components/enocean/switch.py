@@ -4,32 +4,35 @@ from __future__ import annotations
 import voluptuous as vol
 from enocean.protocol.constants import RORG
 from enocean.protocol.packet import RadioPacket
+from enocean.utils import to_hex_string
 
 
 from homeassistant.components.switch import PLATFORM_SCHEMA, SwitchEntity
-from homeassistant.const import CONF_ID, CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.const import CONF_ID, CONF_NAME, CONF_SWITCHES
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from .device import EnOceanEntity
-from .const import SWITCH_ALL_CHANNELS
+from .const import SWITCH_ALL_CHANNELS, DOMAIN
 
 CONF_CHANNEL = "channel"
 CONF_SENDER_ID = "sender_id"
 DEFAULT_NAME = "EnOcean Switch"
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Required(CONF_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Optional(CONF_CHANNEL, default=SWITCH_ALL_CHANNELS): vol.All(
-            int, vol.Range(min=0, max=31)
-        ),  # Default all channels
-        vol.Required(CONF_SENDER_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
-    }
-)
+SWITCH_SCHEMA_DATA = {
+    vol.Required(CONF_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
+    vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+    vol.Optional(CONF_CHANNEL, default=SWITCH_ALL_CHANNELS): vol.All(
+        int, vol.Range(min=0, max=31)
+    ),  # Default all channels
+    vol.Required(CONF_SENDER_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
+}
+
+SWITCH_SCHEMA = vol.Schema(SWITCH_SCHEMA_DATA)
+
+PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(SWITCH_SCHEMA_DATA)
 
 
 def setup_platform(
@@ -39,12 +42,35 @@ def setup_platform(
     discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
     """Set up the EnOcean switch platform."""
+    add_entities([create_entity_from_config(config)])
+
+
+async def async_setup_entry(
+    hass,
+    config_entry,
+    async_add_entities,
+):
+    """Set up config entry."""
+    # Add switch from config file
+    config_data = config_entry.data
+    entities = []
+    if CONF_SWITCHES not in config_data:
+        return
+    for entity_info in config_data[CONF_SWITCHES].values():
+        entity = create_entity_from_config(entity_info)
+        entities.append(entity)
+
+    async_add_entities(entities)
+
+
+def create_entity_from_config(config):
+    """Create Enocean Switch from config"""
     channel = config.get(CONF_CHANNEL)
     dev_id = config.get(CONF_ID)
     dev_name = config.get(CONF_NAME)
     sender_id = config.get(CONF_SENDER_ID)
 
-    add_entities([EnOceanSwitch(dev_id, dev_name, channel, sender_id)])
+    return EnOceanSwitch(dev_id, dev_name, channel, sender_id)
 
 
 class EnOceanSwitch(EnOceanEntity, SwitchEntity):
@@ -124,3 +150,17 @@ class EnOceanSwitch(EnOceanEntity, SwitchEntity):
                 ):  # my channel or all channels
                     self._on_state = output > 0
                     self.schedule_update_ha_state()
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {
+                # Serial numbers are unique identifiers within a specific domain
+                (DOMAIN, self.unique_id)
+            },
+            "name": self.name,
+        }
+
+    @property
+    def unique_id(self):
+        return "{0}-{1}".format("switch", to_hex_string(self.dev_id))

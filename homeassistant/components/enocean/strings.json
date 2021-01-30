@@ -69,6 +69,25 @@
             "range_to": "Range to (only for temperature)"
           }
         },
+        "create_switch": {
+          "title": "Provide switch data",
+          "data": {
+            "id": "Device ID",
+            "sender_id": "Sender ID",
+            "name": "Name",
+            "channel": "Channel",
+            "all_channels": "All channels"
+          }
+        },
+        "set_switch_options": {
+          "title": "Edit switch",
+          "data": {
+            "sender_id": "Sender ID",
+            "name": "Name",
+            "channel": "Channel",
+            "all_channels": "All channels"
+          }
+        },
         "set_sensor_options": {
           "title": "Edit sensor",
           "data": {

@@ -5,6 +5,7 @@ from homeassistant.const import (
     CONF_ID,
     CONF_NAME,
     CONF_SENSORS,
+    CONF_SWITCHES,
 )
 from homeassistant import config_entries, exceptions
 from homeassistant.config_entries import ConfigEntry
@@ -42,6 +43,8 @@ from .sensor import (
     SENSOR_SCHEMA,
 )
 
+from .switch import CONF_CHANNEL, SWITCH_SCHEMA, SWITCH_ALL_CHANNELS
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -50,6 +53,10 @@ ADD_COVER = "Add cover"
 EDIT_COVER = "Edit cover"
 ADD_SENSOR = "Add sensor"
 EDIT_SENSOR = "Edit sensor"
+ADD_SWITCH = "Add switch"
+EDIT_SWITCH = "Edit switch"
+
+CONF_ALL_CHANNELS = "all_channels"
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
@@ -75,21 +82,32 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         """Manage the options."""
         if user_input is not None:
-            if user_input[EDIT_KEY] == EDIT_COVER:
-                return await self.async_step_select_cover()
             if user_input[EDIT_KEY] == ADD_COVER:
                 return await self.async_step_create_cover()
+            if user_input[EDIT_KEY] == ADD_SWITCH:
+                return await self.async_step_create_switch()
             if user_input[EDIT_KEY] == ADD_SENSOR:
                 return await self.async_step_create_sensor()
             if user_input[EDIT_KEY] == EDIT_SENSOR:
                 return await self.async_step_select_sensor()
+            if user_input[EDIT_KEY] == EDIT_COVER:
+                return await self.async_step_select_cover()
+            if user_input[EDIT_KEY] == EDIT_SWITCH:
+                return await self.async_step_select_switch()
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Required(EDIT_KEY): vol.In(
-                        [ADD_COVER, EDIT_COVER, ADD_SENSOR, EDIT_SENSOR]
+                        [
+                            ADD_COVER,
+                            EDIT_COVER,
+                            ADD_SENSOR,
+                            EDIT_SENSOR,
+                            ADD_SWITCH,
+                            EDIT_SWITCH,
+                        ]
                     )
                 },
             ),
@@ -115,10 +133,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_ID: dev_id,
                         }
                     )
-            except vol.error.Error as error:
+            except vol.error.Error:
                 errors["base"] = "invalid_data"
             if not errors:
-                self.update_config_data(covers={to_hex_string(dev_id): data})
+                self.update_config_data(covers={to_hex_string(dev_id): data})  # type: ignore
                 return self.async_create_entry(title="", data=None)
         schema = vol.Schema(
             {
@@ -148,10 +166,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             try:
                 if not errors:
                     data = SENSOR_SCHEMA(user_input)
-            except vol.error.Error as error:
+            except vol.error.Error:
                 errors["base"] = "invalid_data"
             if not errors:
-                self.update_config_data(sensors={to_hex_string(dev_id): data})
+                self.update_config_data(sensors={to_hex_string(dev_id): data})  # type: ignore
                 return self.async_create_entry(title="", data=None)
         schema = vol.Schema(
             {
@@ -168,6 +186,49 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
         return self.async_show_form(
             step_id="create_sensor", data_schema=schema, errors=errors
+        )
+
+    async def async_step_create_switch(self, user_input=None):
+        """Add new switch step"""
+        errors = {}
+        if user_input is not None:
+            dev_id = self.device_id_or_none(user_input[CONF_ID])
+            if dev_id is None:
+                errors[CONF_ID] = "invalid_id"
+            sender_id = self.device_id_or_none(user_input[CONF_SENDER_ID])
+            if sender_id is None:
+                errors[CONF_SENDER_ID] = "invalid_sender_id"
+            user_input[CONF_ID] = dev_id
+            user_input[CONF_SENDER_ID] = sender_id
+            if user_input[CONF_ALL_CHANNELS]:
+                user_input[CONF_CHANNEL] = SWITCH_ALL_CHANNELS
+            user_input.pop(CONF_ALL_CHANNELS, None)
+            try:
+                if not errors:
+                    data = SWITCH_SCHEMA(user_input)
+            except vol.error.Error:
+                errors["base"] = "invalid_data"
+            if not errors:
+                self.update_config_data(switches={to_hex_string(dev_id): data})  # type: ignore
+                return self.async_create_entry(title="", data=None)
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_ID, description={"suggested_value": "0xff,0xff,0xff,0xff"}
+                ): cv.string,
+                vol.Required(
+                    CONF_SENDER_ID,
+                    description={"suggested_value": "0xff,0xff,0xff,0xff"},
+                ): cv.string,
+                vol.Required(CONF_NAME): cv.string,
+                vol.Optional(CONF_CHANNEL, default=0): vol.All(
+                    int, vol.Range(min=0, max=29)
+                ),
+                vol.Optional(CONF_ALL_CHANNELS): cv.boolean,
+            }
+        )
+        return self.async_show_form(
+            step_id="create_switch", data_schema=schema, errors=errors
         )
 
     async def async_step_select_cover(self, user_input=None):
@@ -232,6 +293,37 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             ),
         )
 
+    async def async_step_select_switch(self, user_input=None):
+        """Manage the options."""
+        if user_input is not None:
+            if CONF_SWITCHES in user_input:
+                self._selected_device_entry_id = user_input[CONF_SWITCHES]
+                return await self.async_step_set_switch_options()
+
+            return self.async_create_entry(title="", data=user_input)
+
+        device_registry = await async_get_device_registry(self.hass)
+        device_entries = async_entries_for_config_entry(
+            device_registry, self._config_entry.entry_id
+        )
+        self._device_registry = device_registry
+        self._device_entries = device_entries
+
+        configure_switches = {
+            entry.id: entry.name_by_user if entry.name_by_user else entry.name
+            for entry in device_entries
+            if self.is_device_type(entry.identifiers, "switch")
+        }
+
+        return self.async_show_form(
+            step_id="select_switch",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_SWITCHES): vol.In(configure_switches),
+                }
+            ),
+        )
+
     def find_matching_config(self, device_type, config_key):
         device_id = self._selected_device_entry_id
         # find matching device entity to extract device id (part of unique id)
@@ -282,10 +374,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_ID: self._current_dev_config[CONF_ID],
                         }
                     )
-            except vol.error.Error as error:
+            except vol.error.Error:
                 errors["base"] = "invalid_data"
             if not errors:
-                self.update_config_data(covers={self._current_dev_config_key: data})
+                self.update_config_data(covers={self._current_dev_config_key: data})  # type: ignore
                 return self.async_create_entry(title="", data=None)
         if self._current_dev_config is not None:
             schema = vol.Schema(
@@ -323,10 +415,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             try:
                 user_input[CONF_ID] = self._current_dev_config[CONF_ID]
                 data = SENSOR_SCHEMA(user_input)
-            except vol.error.Error as error:
+            except vol.error.Error:
                 errors["base"] = "invalid_data"
             if not errors:
-                self.update_config_data(sensors={self._current_dev_config_key: data})
+                self.update_config_data(sensors={self._current_dev_config_key: data})  # type: ignore
                 return self.async_create_entry(title="", data=None)
         if self._current_dev_config is not None:
             schema = vol.Schema(
@@ -358,26 +450,78 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             )
         return self.async_create_entry(title="", data=None)
 
+    async def async_step_set_switch_options(self, user_input=None):
+        errors = {}
+        self.find_matching_config("switch", CONF_SWITCHES)
+        if user_input is not None and self._current_dev_config_key is not None:
+            # Test schema
+            try:
+                user_input[CONF_ID] = self._current_dev_config[CONF_ID]
+                sender_id = self.device_id_or_none(user_input[CONF_SENDER_ID])
+                if sender_id is None:
+                    errors[CONF_SENDER_ID] = "invalid_sender_id"
+                user_input[CONF_SENDER_ID] = sender_id
+                if user_input[CONF_ALL_CHANNELS]:
+                    user_input[CONF_CHANNEL] = SWITCH_ALL_CHANNELS
+                user_input.pop(CONF_ALL_CHANNELS, None)
+                data = SWITCH_SCHEMA(user_input)
+            except vol.error.Error:
+                errors["base"] = "invalid_data"
+            if not errors:
+                self.update_config_data(switches={self._current_dev_config_key: data})  # type: ignore
+                return self.async_create_entry(title="", data=None)
+        if self._current_dev_config is not None:
+            if self._current_dev_config[CONF_CHANNEL] == SWITCH_ALL_CHANNELS:
+                all_channels = True
+                channel_number = 0
+            else:
+                all_channels = False
+                channel_number = self._current_dev_config[CONF_CHANNEL]
+            schema = vol.Schema(
+                {
+                    vol.Required(
+                        CONF_SENDER_ID,
+                        default=",".join(
+                            map(
+                                lambda x: hex(x),
+                                self._current_dev_config[CONF_SENDER_ID],
+                            )
+                        ),
+                    ): cv.string,
+                    vol.Required(
+                        CONF_NAME, default=self._current_dev_config[CONF_NAME]
+                    ): cv.string,
+                    vol.Optional(CONF_CHANNEL, default=channel_number): vol.All(
+                        int, vol.Range(min=0, max=29)
+                    ),
+                    vol.Optional(CONF_ALL_CHANNELS, default=all_channels): cv.boolean,
+                }
+            )
+            return self.async_show_form(
+                step_id="set_switch_options", data_schema=schema, errors=errors
+            )
+        return self.async_create_entry(title="", data=None)
+
     @callback
-    def update_config_data(self, global_options=None, covers=None, sensors=None):
+    def update_config_data(
+        self, global_options=None, covers=None, sensors=None, switches=None
+    ):
         """Update data in ConfigEntry."""
         entry_data = self._config_entry.data.copy()
-        for platform in [CONF_COVERS, CONF_SENSORS]:
+        for platform, values in {
+            CONF_COVERS: covers,
+            CONF_SENSORS: sensors,
+            CONF_SWITCHES: switches,
+        }.items():
             entry_data[platform] = copy.deepcopy(
                 self._config_entry.data.get(platform, {})
             )
-        if covers:
-            for id, options in covers.items():
-                if options is None:
-                    entry_data[CONF_COVERS].pop(id)
-                else:
-                    entry_data[CONF_COVERS][id] = options
-        if sensors:
-            for id, options in sensors.items():
-                if options is None:
-                    entry_data[CONF_SENSORS].pop(id)
-                else:
-                    entry_data[CONF_SENSORS][id] = options
+            if values:
+                for id, options in values.items():
+                    if options is None:
+                        entry_data[platform].pop(id)
+                    else:
+                        entry_data[platform][id] = options
         self.hass.config_entries.async_update_entry(self._config_entry, data=entry_data)
         self.hass.async_create_task(
             self.hass.config_entries.async_reload(self._config_entry.entry_id)
