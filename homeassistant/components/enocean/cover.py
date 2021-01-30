@@ -66,14 +66,14 @@ async def async_setup_entry(
     entities = []
     if CONF_COVERS not in config_data:
         return
-    for id, entity_info in config_data[CONF_COVERS].items():
-        entity = create_entity_from_config(hass, entity_info)
+    for entity_info in config_data[CONF_COVERS].values():
+        entity = create_entity_from_config(entity_info)
         entities.append(entity)
 
     async_add_entities(entities)
 
 
-def create_entity_from_config(hass, config):
+def create_entity_from_config(config):
     """Create cover entity from configuration"""
     sender_id = config.get(CONF_SENDER_ID)
     dev_name = config.get(CONF_NAME)
@@ -89,7 +89,7 @@ def create_entity_from_config(hass, config):
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the EnOcean cover platform."""
-    return add_entities([create_entity_from_config(hass, config)])
+    return add_entities([create_entity_from_config(config)])
 
 
 class EnOceanCover(EnOceanEntity, CoverEntity):

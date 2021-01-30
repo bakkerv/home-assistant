@@ -14,6 +14,7 @@ from homeassistant.const import (
     CONF_DEVICE_CLASS,
     CONF_ID,
     CONF_NAME,
+    CONF_SENSORS,
     PERCENTAGE,
     POWER_WATT,
     STATE_CLOSED,
@@ -27,6 +28,9 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from .device import EnOceanEntity
+from .const import DOMAIN
+from enocean.utils import to_hex_string
+
 
 CONF_MAX_TEMP = "max_temp"
 CONF_MIN_TEMP = "min_temp"
@@ -74,17 +78,19 @@ SENSOR_DESC_WINDOWHANDLE = SensorEntityDescription(
 )
 
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Required(CONF_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Optional(CONF_DEVICE_CLASS, default=SENSOR_TYPE_POWER): cv.string,
-        vol.Optional(CONF_MAX_TEMP, default=40): vol.Coerce(int),
-        vol.Optional(CONF_MIN_TEMP, default=0): vol.Coerce(int),
-        vol.Optional(CONF_RANGE_FROM, default=255): cv.positive_int,
-        vol.Optional(CONF_RANGE_TO, default=0): cv.positive_int,
-    }
-)
+SENSOR_SCHEMA_DATA = {
+    vol.Required(CONF_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
+    vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+    vol.Optional(CONF_DEVICE_CLASS, default=SENSOR_TYPE_POWER): cv.string,
+    vol.Optional(CONF_MAX_TEMP, default=40): vol.Coerce(int),
+    vol.Optional(CONF_MIN_TEMP, default=0): vol.Coerce(int),
+    vol.Optional(CONF_RANGE_FROM, default=255): cv.positive_int,
+    vol.Optional(CONF_RANGE_TO, default=0): cv.positive_int,
+}
+
+SENSOR_SCHEMA = vol.Schema(SENSOR_SCHEMA_DATA)
+
+PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(SENSOR_SCHEMA_DATA)
 
 
 def setup_platform(
@@ -94,39 +100,51 @@ def setup_platform(
     discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
     """Set up an EnOcean sensor device."""
-    dev_id = config[CONF_ID]
-    dev_name = config[CONF_NAME]
-    sensor_type = config[CONF_DEVICE_CLASS]
+    add_entities([create_entity_from_config(config)])
+
+
+async def async_setup_entry(
+    hass,
+    config_entry,
+    async_add_entities,
+):
+    """Set up config entry."""
+
+    # Add cover from config file
+    config_data = config_entry.data
+    entities = []
+    if CONF_SENSORS not in config_data:
+        return
+    for entity_info in config_data[CONF_SENSORS].values():
+        entity = create_entity_from_config(entity_info)
+        entities.append(entity)
+
+    async_add_entities(entities)
+
+
+def create_entity_from_config(config):
+    dev_id = config.get(CONF_ID)
+    dev_name = config.get(CONF_NAME)
+    sensor_type = config.get(CONF_DEVICE_CLASS)
 
     entities: list[EnOceanSensor] = []
     if sensor_type == SENSOR_TYPE_TEMPERATURE:
-        temp_min = config[CONF_MIN_TEMP]
-        temp_max = config[CONF_MAX_TEMP]
-        range_from = config[CONF_RANGE_FROM]
-        range_to = config[CONF_RANGE_TO]
-        entities = [
-            EnOceanTemperatureSensor(
-                dev_id,
-                dev_name,
-                SENSOR_DESC_TEMPERATURE,
-                scale_min=temp_min,
-                scale_max=temp_max,
-                range_from=range_from,
-                range_to=range_to,
-            )
-        ]
+        temp_min = config.get(CONF_MIN_TEMP)
+        temp_max = config.get(CONF_MAX_TEMP)
+        range_from = config.get(CONF_RANGE_FROM)
+        range_to = config.get(CONF_RANGE_TO)
+        return EnOceanTemperatureSensor(
+            dev_id, dev_name, SENSOR_DESC_TEMPERATURE, scale_min=temp_min, scale_max=temp_max, range_from=range_from, range_to=range_to
+        )
 
     elif sensor_type == SENSOR_TYPE_HUMIDITY:
-        entities = [EnOceanHumiditySensor(dev_id, dev_name, SENSOR_DESC_HUMIDITY)]
+        return EnOceanHumiditySensor(dev_id, dev_name, SENSOR_DESC_HUMIDITY)
 
     elif sensor_type == SENSOR_TYPE_POWER:
-        entities = [EnOceanPowerSensor(dev_id, dev_name, SENSOR_DESC_POWER)]
+        return EnOceanPowerSensor(dev_id, dev_name, SENSOR_DESC_POWER)
 
     elif sensor_type == SENSOR_TYPE_WINDOWHANDLE:
-        entities = [EnOceanWindowHandle(dev_id, dev_name, SENSOR_DESC_WINDOWHANDLE)]
-
-    if entities:
-        add_entities(entities)
+        return EnOceanWindowHandle(dev_id, dev_name, SENSOR_DESC_WINDOWHANDLE)
 
 
 class EnOceanSensor(EnOceanEntity, RestoreEntity, SensorEntity):
@@ -150,6 +168,20 @@ class EnOceanSensor(EnOceanEntity, RestoreEntity, SensorEntity):
 
     def value_changed(self, packet):
         """Update the internal state of the sensor."""
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {
+                # Serial numbers are unique identifiers within a specific domain
+                (DOMAIN, self.unique_id)
+            },
+            "name": self.name,
+        }
+
+    @property
+    def unique_id(self):
+        return "{0}-{1}".format("sensor", to_hex_string(self.dev_id))
 
 
 class EnOceanPowerSensor(EnOceanSensor):
