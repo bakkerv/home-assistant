@@ -15,7 +15,7 @@ from .const import DATA_ENOCEAN, DOMAIN, ENOCEAN_DONGLE
 from .dongle import EnOceanDongle
 from .cover import ENOCEAN_COVER_SCHEMA
 
-PLATFORMS = ["cover", "sensor", "switch"]
+PLATFORMS = ["cover", "sensor", "switch", "light"]
 
 
 def _ensure_cover(value):

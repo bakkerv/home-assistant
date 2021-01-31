@@ -24,87 +24,106 @@
   },
   "options": {
     "step": {
-        "select_cover": {
-            "data": {
-                "covers": "Select cover to configure"
-            },
-            "title": "EnOcean covers"
+      "select_cover": {
+        "data": {
+          "covers": "Select cover to configure"
         },
-        "select_sensor": {
-          "data": {
-              "covers": "Select sensor to configure"
-          },
-          "title": "EnOcean sensors"
+        "title": "EnOcean covers"
       },
-        "init": {
-          "title": "Select your action"
+      "select_sensor": {
+        "data": {
+          "covers": "Select sensor to configure"
         },
-        "set_cover_options": {
-            "title": "Edit cover",
-            "data": {
-                "sender_id": "Sender ID",
-                "use_vld": "Use VLD datagrams",
-                "name": "Name"
-            }
-
-        },
-        "create_cover": {
-          "title": "Provide cover data",
-          "data": {
-            "id": "Device ID",
-            "sender_id": "Sender ID",
-            "use_vld": "Use VLD datagrams",
-            "name": "Name"
-          }
-        },
-        "create_sensor": {
-          "title": "Provide sensor data",
-          "data": {
-            "id": "Device ID",
-            "name": "Name",
-            "device_class": "Device Class",
-            "max_temp": "Maximum temperature (only for temperature)",
-            "min_temp": "Minimum temperature (only for temperature)",
-            "range_from": "Range from (only for temperature)",
-            "range_to": "Range to (only for temperature)"
-          }
-        },
-        "create_switch": {
-          "title": "Provide switch data",
-          "data": {
-            "id": "Device ID",
-            "sender_id": "Sender ID",
-            "name": "Name",
-            "channel": "Channel",
-            "all_channels": "All channels"
-          }
-        },
-        "set_switch_options": {
-          "title": "Edit switch",
-          "data": {
-            "sender_id": "Sender ID",
-            "name": "Name",
-            "channel": "Channel",
-            "all_channels": "All channels"
-          }
-        },
-        "set_sensor_options": {
-          "title": "Edit sensor",
-          "data": {
-            "name": "Name",
-            "device_class": "Device Class",
-            "max_temp": "Maximum temperature (only for temperature)",
-            "min_temp": "Minimum temperature (only for temperature)",
-            "range_from": "Range from (only for temperature)",
-            "range_to": "Range to (only for temperature)"
-          }
+        "title": "EnOcean sensors"
+      },
+      "init": {
+        "title": "Select your action",
+        "data": {
+          "add_selection": "Select device to add",
+          "edit_selection": "Select device to edit",
+          "remove_selection": "Select device to remove"
         }
+      },
+      "set_cover_options": {
+        "title": "Edit cover",
+        "data": {
+          "sender_id": "Sender ID",
+          "use_vld": "Use VLD datagrams",
+          "name": "Name"
+        }
+      },
+      "create_cover": {
+        "title": "Provide cover data",
+        "data": {
+          "id": "Device ID",
+          "sender_id": "Sender ID",
+          "use_vld": "Use VLD datagrams",
+          "name": "Name"
+        }
+      },
+      "create_sensor": {
+        "title": "Provide sensor data",
+        "data": {
+          "id": "Device ID",
+          "name": "Name",
+          "device_class": "Device Class",
+          "max_temp": "Maximum temperature (only for temperature)",
+          "min_temp": "Minimum temperature (only for temperature)",
+          "range_from": "Range from (only for temperature)",
+          "range_to": "Range to (only for temperature)"
+        }
+      },
+      "create_switch": {
+        "title": "Provide switch data",
+        "data": {
+          "id": "Device ID",
+          "sender_id": "Sender ID",
+          "name": "Name",
+          "channel": "Channel",
+          "all_channels": "All channels"
+        }
+      },
+      "create_light": {
+        "title": "Provide light data",
+        "data": {
+          "id": "Device ID",
+          "sender_id": "Sender ID",
+          "name": "Name"
+        }
+      },
+      "set_switch_options": {
+        "title": "Edit switch",
+        "data": {
+          "sender_id": "Sender ID",
+          "name": "Name",
+          "channel": "Channel",
+          "all_channels": "All channels"
+        }
+      },
+      "set_sensor_options": {
+        "title": "Edit sensor",
+        "data": {
+          "name": "Name",
+          "device_class": "Device Class",
+          "max_temp": "Maximum temperature (only for temperature)",
+          "min_temp": "Minimum temperature (only for temperature)",
+          "range_from": "Range from (only for temperature)",
+          "range_to": "Range to (only for temperature)"
+        }
+      },
+      "set_light_options": {
+        "title": "Edit light",
+        "data": {
+          "sender_id": "Sender ID",
+          "name": "Name"
+        }
+      }
     },
     "error": {
-        "invalid_sender_id": "Invalid sender ID",
-        "invalid_id": "Invalid  ID",
-        "id_in_use": "ID already defined",
-        "invalid_data": "Invalid data"
+      "invalid_sender_id": "Invalid sender ID",
+      "invalid_id": "Invalid  ID",
+      "id_in_use": "ID already defined",
+      "invalid_data": "Invalid data"
     }
-}
+  }
 }

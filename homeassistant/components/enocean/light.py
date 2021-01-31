@@ -11,26 +11,30 @@ from homeassistant.components.light import (
     SUPPORT_BRIGHTNESS,
     LightEntity,
 )
-from homeassistant.const import CONF_ID, CONF_NAME
+from homeassistant.const import CONF_ID, CONF_LIGHTS, CONF_NAME
 from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
+from enocean.utils import to_hex_string
 
 from .device import EnOceanEntity
+from .const import DOMAIN
 
 CONF_SENDER_ID = "sender_id"
 
 DEFAULT_NAME = "EnOcean Light"
 SUPPORT_ENOCEAN = SUPPORT_BRIGHTNESS
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Optional(CONF_ID, default=[]): vol.All(cv.ensure_list, [vol.Coerce(int)]),
-        vol.Required(CONF_SENDER_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-    }
-)
+LIGHT_SCHEMA_DATA = {
+    vol.Optional(CONF_ID, default=[]): vol.All(cv.ensure_list, [vol.Coerce(int)]),
+    vol.Required(CONF_SENDER_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
+    vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+}
+
+LIGHT_SCHEMA = vol.Schema(LIGHT_SCHEMA_DATA)
+
+PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(LIGHT_SCHEMA_DATA)
 
 
 def setup_platform(
@@ -40,11 +44,35 @@ def setup_platform(
     discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
     """Set up the EnOcean light platform."""
+    add_entities([create_entity_from_config(config)])
+
+
+async def async_setup_entry(
+    hass,
+    config_entry,
+    async_add_entities,
+):
+    """Set up config entry."""
+
+    # Add cover from config file
+    config_data = config_entry.data
+    entities = []
+    if CONF_LIGHTS not in config_data:
+        return
+    for entity_info in config_data[CONF_LIGHTS].values():
+        entity = create_entity_from_config(entity_info)
+        entities.append(entity)
+
+    async_add_entities(entities)
+
+
+def create_entity_from_config(config):
+    """Create light entity from configuration"""
     sender_id = config.get(CONF_SENDER_ID)
     dev_name = config.get(CONF_NAME)
     dev_id = config.get(CONF_ID)
 
-    add_entities([EnOceanLight(sender_id, dev_id, dev_name)])
+    return EnOceanLight(sender_id, dev_id, dev_name)
 
 
 class EnOceanLight(EnOceanEntity, LightEntity):
@@ -114,3 +142,17 @@ class EnOceanLight(EnOceanEntity, LightEntity):
             self._brightness = math.floor(val / 100.0 * 256.0)
             self._on_state = bool(val != 0)
             self.schedule_update_ha_state()
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {
+                # Serial numbers are unique identifiers within a specific domain
+                (DOMAIN, self.unique_id)
+            },
+            "name": self.name,
+        }
+
+    @property
+    def unique_id(self):
+        return "{0}-{1}".format("light", to_hex_string(self.dev_id))
