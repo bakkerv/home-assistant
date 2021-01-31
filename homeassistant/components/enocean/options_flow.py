@@ -28,7 +28,7 @@ from homeassistant.helpers.entity_registry import (
 import voluptuous as vol
 import logging
 
-from .const import DOMAIN
+from .const import CONF_EVENTS, DOMAIN
 from .cover import (
     ENOCEAN_COVER_SCHEMA_DATA,
     ENOCEAN_COVER_SCHEMA,
@@ -44,6 +44,7 @@ from .sensor import (
     SENSOR_TYPES,
     SENSOR_SCHEMA,
 )
+from .enocean_event import EVENT_SCHEMA
 
 from .switch import CONF_CHANNEL, SWITCH_SCHEMA, SWITCH_ALL_CHANNELS
 from .light import LIGHT_SCHEMA
@@ -61,7 +62,8 @@ PLATFORM_LIGHT = "light"
 PLATFORM_SENSOR = "sensor"
 PLATFORM_COVER = "cover"
 PLATFORM_SWITCH = "switch"
-PLATFORMS = [PLATFORM_SENSOR, PLATFORM_COVER, PLATFORM_LIGHT, PLATFORM_SWITCH]
+EVENT = "event"
+PLATFORMS = [PLATFORM_SENSOR, PLATFORM_COVER, PLATFORM_LIGHT, PLATFORM_SWITCH, EVENT]
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
@@ -96,6 +98,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     return await self.async_step_create_sensor()
                 if user_input[ADD_KEY] == PLATFORM_LIGHT:
                     return await self.async_step_create_light()
+                if user_input[ADD_KEY] == EVENT:
+                    return await self.async_step_create_event()
             if EDIT_KEY in user_input:
                 if user_input[EDIT_KEY] == PLATFORM_SENSOR:
                     return await self.async_step_select_sensor()
@@ -105,6 +109,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     return await self.async_step_select_switch()
                 if user_input[EDIT_KEY] == PLATFORM_LIGHT:
                     return await self.async_step_select_light()
+                if user_input[EDIT_KEY] == EVENT:
+                    return await self.async_step_select_event()
             if REMOVE_KEY in user_input:
                 if user_input[REMOVE_KEY] == PLATFORM_SENSOR:
                     return await self.async_step_select_sensor_to_remove()
@@ -114,6 +120,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     return await self.async_step_select_switch_to_remove()
                 if user_input[REMOVE_KEY] == PLATFORM_LIGHT:
                     return await self.async_step_select_light_to_remove()
+                if user_input[REMOVE_KEY] == EVENT:
+                    return await self.async_step_select_event_to_remove()
 
         return self.async_show_form(
             step_id="init",
@@ -212,6 +220,39 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
         return self.async_show_form(
             step_id="create_light", data_schema=schema, errors=errors
+        )
+
+    async def async_step_create_event(self, user_input=None):
+        """Add new event step"""
+        errors = {}
+        if user_input is not None:
+            dev_id = self.device_id_or_none(user_input[CONF_ID])
+            if dev_id is None:
+                errors[CONF_ID] = "invalid_id"
+            if (
+                CONF_EVENTS in self._config_entry.data
+                and to_hex_string(dev_id) in self._config_entry.data[CONF_EVENTS]
+            ):
+                errors[CONF_ID] = "id_in_use"
+            user_input[CONF_ID] = dev_id
+            try:
+                if not errors:
+                    data = EVENT_SCHEMA(user_input)
+            except vol.error.Error:
+                errors["base"] = "invalid_data"
+            if not errors:
+                self.update_config_data(events={to_hex_string(dev_id): data})  # type: ignore
+                return self.async_create_entry(title="", data=None)
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_ID, description={"suggested_value": "0xff,0xff,0xff,0xff"}
+                ): cv.string,
+                vol.Required(CONF_NAME): cv.string,
+            }
+        )
+        return self.async_show_form(
+            step_id="create_event", data_schema=schema, errors=errors
         )
 
     async def async_step_create_sensor(self, user_input=None):
@@ -340,11 +381,27 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             user_input=user_input,
         )
 
+    async def async_step_select_event_to_remove(self, user_input=None):
+        return await self.async_step_select_device(
+            "event",
+            self.async_step_remove_event,
+            "select_event_to_remove",
+            user_input=user_input,
+        )
+
     async def async_step_select_light(self, user_input=None):
         return await self.async_step_select_device(
             "light",
             self.async_step_set_light_options,
             "select_light",
+            user_input=user_input,
+        )
+
+    async def async_step_select_event(self, user_input=None):
+        return await self.async_step_select_device(
+            "event",
+            self.async_step_set_event_options,
+            "select_event",
             user_input=user_input,
         )
 
@@ -456,6 +513,13 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if self._current_dev_config_key is not None:
             self._device_registry.async_remove_device(self._selected_device_entry_id)
             self.update_config_data(sensors={self._current_dev_config_key: None})
+        return self.async_create_entry(title="", data=None)
+
+    async def async_step_remove_event(self, user_input=None):
+        self.find_matching_config("event", CONF_EVENTS)
+        if self._current_dev_config_key is not None:
+            self._device_registry.async_remove_device(self._selected_device_entry_id)
+            self.update_config_data(events={self._current_dev_config_key: None})
         return self.async_create_entry(title="", data=None)
 
     async def async_step_set_cover_options(self, user_input=None):
@@ -644,6 +708,32 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             )
         return self.async_create_entry(title="", data=None)
 
+    async def async_step_set_event_options(self, user_input=None):
+        errors = {}
+        self.find_matching_config("event", CONF_EVENTS)
+        if user_input is not None and self._current_dev_config_key is not None:
+            # Test schema
+            try:
+                user_input[CONF_ID] = self._current_dev_config[CONF_ID]
+                data = EVENT_SCHEMA(user_input)
+            except vol.error.Error:
+                errors["base"] = "invalid_data"
+            if not errors:
+                self.update_config_data(events={self._current_dev_config_key: data})  # type: ignore
+                return self.async_create_entry(title="", data=None)
+        if self._current_dev_config is not None:
+            schema = vol.Schema(
+                {
+                    vol.Required(
+                        CONF_NAME, default=self._current_dev_config[CONF_NAME]
+                    ): cv.string,
+                }
+            )
+            return self.async_show_form(
+                step_id="set_event_options", data_schema=schema, errors=errors
+            )
+        return self.async_create_entry(title="", data=None)
+
     @callback
     def update_config_data(
         self,
@@ -652,6 +742,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         sensors=None,
         switches=None,
         lights=None,
+        events=None,
     ):
         """Update data in ConfigEntry."""
         removal = False
@@ -661,6 +752,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             CONF_SENSORS: sensors,
             CONF_SWITCHES: switches,
             CONF_LIGHTS: lights,
+            CONF_EVENTS: events,
         }.items():
             entry_data[platform] = copy.deepcopy(
                 self._config_entry.data.get(platform, {})

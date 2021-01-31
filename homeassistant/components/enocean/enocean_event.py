@@ -1,72 +1,67 @@
-"""Support for EnOcean binary sensors."""
+"""Support for EnOcean buttons"""
 from __future__ import annotations
-
 import voluptuous as vol
 
-from homeassistant.components.binary_sensor import (
-    DEVICE_CLASSES_SCHEMA,
-    PLATFORM_SCHEMA,
-    BinarySensorEntity,
-)
 from homeassistant.const import CONF_DEVICE_CLASS, CONF_ID, CONF_NAME
 from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
+from homeassistant.config_entries import ConfigEntry
+from enocean.utils import to_hex_string
 
 from .device import EnOceanEntity
+from .const import CONF_EVENTS, DOMAIN
 
-DEFAULT_NAME = "EnOcean binary sensor"
-DEPENDENCIES = ["enocean"]
+DEFAULT_NAME = "EnOcean button"
 EVENT_BUTTON_PRESSED = "button_pressed"
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Required(CONF_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Optional(CONF_DEVICE_CLASS): DEVICE_CLASSES_SCHEMA,
-    }
-)
+EVENT_SCHEMA_DATA = {
+    vol.Required(CONF_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
+    vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+}
+
+EVENT_SCHEMA = vol.Schema(EVENT_SCHEMA_DATA)
+
+async def async_setup_events(hass, configEntry: ConfigEntry):
+    if not CONF_EVENTS in configEntry.data:
+        return
+    for config in configEntry.data[CONF_EVENTS].values():
+        new_event = create_entity_from_config(config, hass, configEntry.entry_id)
+        hass.async_create_task(new_event.async_update_device_registry())
 
 
-def setup_platform(
-    hass: HomeAssistant,
-    config: ConfigType,
-    add_entities: AddEntitiesCallback,
-    discovery_info: DiscoveryInfoType | None = None,
-) -> None:
-    """Set up the Binary Sensor platform for EnOcean."""
+def create_entity_from_config(config, hass, config_entry_id):
     dev_id = config.get(CONF_ID)
     dev_name = config.get(CONF_NAME)
-    device_class = config.get(CONF_DEVICE_CLASS)
 
-    add_entities([EnOceanBinarySensor(dev_id, dev_name, device_class)])
+    return EnOceanEvent(dev_id, dev_name, hass, config_entry_id)
 
 
-class EnOceanBinarySensor(EnOceanEntity, BinarySensorEntity):
-    """Representation of EnOcean binary sensors such as wall switches.
+class EnOceanEvent(EnOceanEntity):
+    """Representation of EnOcean button sensors such as wall switches.
 
     Supported EEPs (EnOcean Equipment Profiles):
     - F6-02-01 (Light and Blind Control - Application Style 2)
     - F6-02-02 (Light and Blind Control - Application Style 1)
     """
 
-    def __init__(self, dev_id, dev_name, device_class):
+    def __init__(self, dev_id, dev_name, hass, config_entry_id):
         """Initialize the EnOcean binary sensor."""
         super().__init__(dev_id, dev_name)
-        self._device_class = device_class
         self.which = -1
         self.onoff = -1
+        self.config_entry_id = config_entry_id
+        self.device_entry_id = None
+        self.hass = hass
 
     @property
     def name(self):
-        """Return the default name for the binary sensor."""
+        """Return the default name for the sensor."""
         return self.dev_name
 
     @property
-    def device_class(self):
-        """Return the class of this sensor."""
-        return self._device_class
+    def should_poll(self):
+        """No polling needed."""
+        return False
 
     def value_changed(self, packet):
         """Fire an event with the data that have changed.
@@ -88,7 +83,7 @@ class EnOceanBinarySensor(EnOceanEntity, BinarySensorEntity):
         elif packet.data[6] == 0x20:
             pushed = 0
 
-        self.schedule_update_ha_state()
+        # self.schedule_update_ha_state()
 
         action = packet.data[1]
         if action == 0x70:
@@ -119,3 +114,27 @@ class EnOceanBinarySensor(EnOceanEntity, BinarySensorEntity):
                 "entity_id": self.entity_id,
             },
         )
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {
+                # Serial numbers are unique identifiers within a specific domain
+                (DOMAIN, self.unique_id)
+            },
+            "name": self.name,
+        }
+
+    @property
+    def unique_id(self):
+        return "{0}-{1}".format("event", to_hex_string(self.dev_id))
+
+    async def async_update_device_registry(self):
+        """Update device registry."""
+        device_registry = await self.hass.helpers.device_registry.async_get_registry()
+
+        entry = device_registry.async_get_or_create(
+            config_entry_id=self.config_entry_id, **self.device_info
+        )
+        self.device_entry_id = entry.id
+        await self.async_added_to_hass()

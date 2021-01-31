@@ -11,9 +11,10 @@ from homeassistant.const import CONF_COVERS, CONF_DEVICE
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DATA_ENOCEAN, DOMAIN, ENOCEAN_DONGLE
+from .const import CONF_EVENTS, DATA_ENOCEAN, DOMAIN, ENOCEAN_DONGLE
 from .dongle import EnOceanDongle
 from .cover import ENOCEAN_COVER_SCHEMA
+from .enocean_event import async_setup_events
 
 PLATFORMS = ["cover", "sensor", "switch", "light"]
 
@@ -60,14 +61,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up an EnOcean dongle for the given entry."""
     enocean_data = hass.data.setdefault(DATA_ENOCEAN, {})
-    # usb_dongle = EnOceanDongle(hass, config_entry.data[CONF_DEVICE])
-    # await usb_dongle.async_setup()
-    # enocean_data[ENOCEAN_DONGLE] = usb_dongle
+    usb_dongle = EnOceanDongle(hass, config_entry.data[CONF_DEVICE])
+    await usb_dongle.async_setup()
+    enocean_data[ENOCEAN_DONGLE] = usb_dongle
 
     for platform in PLATFORMS:
         hass.async_create_task(
             hass.config_entries.async_forward_entry_setup(config_entry, platform)
         )
+    await async_setup_events(configEntry=config_entry, hass=hass)
 
     return True
 
