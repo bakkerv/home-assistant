@@ -133,6 +133,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             dev_id = self.device_id_or_none(user_input[CONF_ID])
             if dev_id is None:
                 errors[CONF_ID] = "invalid_id"
+            if (
+                CONF_COVERS in self._config_entry.data
+                and to_hex_string(dev_id) in self._config_entry.data[CONF_COVERS]
+            ):
+                errors[CONF_ID] = "id_in_use"
             sender_id = self.device_id_or_none(user_input[CONF_SENDER_ID])
             if sender_id is None:
                 errors[CONF_SENDER_ID] = "invalid_sender_id"
@@ -175,6 +180,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             dev_id = self.device_id_or_none(user_input[CONF_ID])
             if dev_id is None:
                 errors[CONF_ID] = "invalid_id"
+            if (
+                CONF_LIGHTS in self._config_entry.data
+                and to_hex_string(dev_id) in self._config_entry.data[CONF_LIGHTS]
+            ):
+                errors[CONF_ID] = "id_in_use"
             sender_id = self.device_id_or_none(user_input[CONF_SENDER_ID])
             if sender_id is None:
                 errors[CONF_SENDER_ID] = "invalid_sender_id"
@@ -212,6 +222,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             if dev_id is None:
                 errors[CONF_ID] = "invalid_id"
             user_input[CONF_ID] = dev_id
+            if (
+                CONF_SENSORS in self._config_entry.data
+                and to_hex_string(dev_id) in self._config_entry.data[CONF_SENSORS]
+            ):
+                errors[CONF_ID] = "id_in_use"
             try:
                 if not errors:
                     data = SENSOR_SCHEMA(user_input)
@@ -244,6 +259,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             dev_id = self.device_id_or_none(user_input[CONF_ID])
             if dev_id is None:
                 errors[CONF_ID] = "invalid_id"
+            if (
+                CONF_SWITCHES in self._config_entry.data
+                and to_hex_string(dev_id) in self._config_entry.data[CONF_SWITCHES]
+            ):
+                errors[CONF_ID] = "id_in_use"
             sender_id = self.device_id_or_none(user_input[CONF_SENDER_ID])
             if sender_id is None:
                 errors[CONF_SENDER_ID] = "invalid_sender_id"
