@@ -91,6 +91,13 @@
           "name": "Name"
         }
       },
+      "create_event": {
+        "title": "Provide event data",
+        "data": {
+          "id": "Device ID",
+          "name": "Name"
+        }
+      },
       "set_switch_options": {
         "title": "Edit switch",
         "data": {
@@ -115,6 +122,12 @@
         "title": "Edit light",
         "data": {
           "sender_id": "Sender ID",
+          "name": "Name"
+        }
+      },
+      "set_event_options": {
+        "title": "Edit event",
+        "data": {
           "name": "Name"
         }
       }

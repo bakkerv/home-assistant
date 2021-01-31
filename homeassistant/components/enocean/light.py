@@ -17,7 +17,6 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from enocean.utils import to_hex_string
-
 from .device import EnOceanEntity
 from .const import DOMAIN
 
@@ -155,4 +154,4 @@ class EnOceanLight(EnOceanEntity, LightEntity):
 
     @property
     def unique_id(self):
-        return "{0}-{1}".format("light", to_hex_string(self.dev_id))
+        return f"light-{to_hex_string(self.dev_id)}"

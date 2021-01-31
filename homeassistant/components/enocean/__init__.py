@@ -2,7 +2,9 @@
 from typing import Optional
 import voluptuous as vol
 import asyncio
+from typing import Optional
 
+import voluptuous as vol
 
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -12,8 +14,8 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 from .const import CONF_EVENTS, DATA_ENOCEAN, DOMAIN, ENOCEAN_DONGLE
-from .dongle import EnOceanDongle
 from .cover import ENOCEAN_COVER_SCHEMA
+from .dongle import EnOceanDongle
 from .enocean_event import async_setup_events
 
 PLATFORMS = ["cover", "sensor", "switch", "light"]
@@ -61,9 +63,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up an EnOcean dongle for the given entry."""
     enocean_data = hass.data.setdefault(DATA_ENOCEAN, {})
-    usb_dongle = EnOceanDongle(hass, config_entry.data[CONF_DEVICE])
-    await usb_dongle.async_setup()
-    enocean_data[ENOCEAN_DONGLE] = usb_dongle
+    # usb_dongle = EnOceanDongle(hass, config_entry.data[CONF_DEVICE])
+    # await usb_dongle.async_setup()
+    # enocean_data[ENOCEAN_DONGLE] = usb_dongle
 
     for platform in PLATFORMS:
         hass.async_create_task(
@@ -89,6 +91,8 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     enocean_dongle = hass.data[DATA_ENOCEAN].get(ENOCEAN_DONGLE, None)
     if enocean_dongle:
         enocean_dongle.unload()
+    # on dongle unload, all connected dispatchers for handling datagrams are disconnect.
+    # this pop will remove events
     hass.data.pop(DATA_ENOCEAN)
 
     return unload_ok

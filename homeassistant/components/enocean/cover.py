@@ -7,7 +7,6 @@ from enocean.protocol.packet import RadioPacket
 from enocean.utils import to_hex_string
 import voluptuous as vol
 
-
 from homeassistant.components import enocean
 from homeassistant.components.cover import (
     ATTR_POSITION,
@@ -20,8 +19,8 @@ from homeassistant.components.cover import (
 )
 from homeassistant.const import CONF_COVERS, CONF_DEVICES, CONF_ID, CONF_NAME, CONF_TYPE
 import homeassistant.helpers.config_validation as cv
-from .const import COVER_ALL_CHANNELS
 
+from .const import COVER_ALL_CHANNELS
 from .device import EnOceanEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -262,7 +261,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
 
     @property
     def unique_id(self):
-        return "{0}-{1}".format("cover", to_hex_string(self.dev_id))
+        return f"cover-{to_hex_string(self.dev_id)}"
 
 
 class EnOceanVldCover(EnOceanEntity, CoverEntity):
@@ -398,4 +397,4 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
 
     @property
     def unique_id(self):
-        return "{0}-{1}".format("cover", to_hex_string(self.dev_id))
+        return f"cover-{to_hex_string(self.dev_id)}"

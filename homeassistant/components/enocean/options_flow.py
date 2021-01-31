@@ -1,4 +1,14 @@
+"""OptionFlow to configure EnOcean devices."""
+
+import copy
+import logging
+
+from enocean.utils import from_hex_string, to_hex_string
+import voluptuous as vol
+
+from homeassistant import config_entries, exceptions
 from homeassistant.components.command_line.cover import COVER_SCHEMA
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_COVERS,
     CONF_DEVICE,
@@ -8,15 +18,8 @@ from homeassistant.const import (
     CONF_SENSORS,
     CONF_SWITCHES,
 )
-from homeassistant import config_entries, exceptions
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import callback
-from enocean.utils import from_hex_string, to_hex_string
-import copy
-
-
-from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import device_registry
+from homeassistant.helpers import config_validation as cv, device_registry
 from homeassistant.helpers.device_registry import (
     async_entries_for_config_entry,
     async_get_registry as async_get_device_registry,
@@ -25,29 +28,26 @@ from homeassistant.helpers.entity_registry import (
     async_entries_for_device,
     async_get_registry as async_get_entity_registry,
 )
-import voluptuous as vol
-import logging
 
 from .const import CONF_EVENTS, DATA_ENOCEAN, DOMAIN
 from .cover import (
-    ENOCEAN_COVER_SCHEMA_DATA,
-    ENOCEAN_COVER_SCHEMA,
     CONF_SENDER_ID,
     CONF_USE_VLD,
-)
-from .sensor import (
-    CONF_DEVICE_CLASS,
-    CONF_MIN_TEMP,
-    CONF_MAX_TEMP,
-    CONF_RANGE_FROM,
-    CONF_RANGE_TO,
-    SENSOR_TYPES,
-    SENSOR_SCHEMA,
+    ENOCEAN_COVER_SCHEMA,
+    ENOCEAN_COVER_SCHEMA_DATA,
 )
 from .enocean_event import EVENT_SCHEMA, EnOceanEvent
-
-from .switch import CONF_CHANNEL, SWITCH_SCHEMA, SWITCH_ALL_CHANNELS
 from .light import LIGHT_SCHEMA
+from .sensor import (
+    CONF_DEVICE_CLASS,
+    CONF_MAX_TEMP,
+    CONF_MIN_TEMP,
+    CONF_RANGE_FROM,
+    CONF_RANGE_TO,
+    SENSOR_SCHEMA,
+    SENSOR_TYPES,
+)
+from .switch import CONF_CHANNEL, SWITCH_ALL_CHANNELS, SWITCH_SCHEMA
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,10 +76,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         self._current_dev_config = None
         self._current_dev_config_key = None
 
-    def is_device_type(self, identifiers: set, expected_type: str):
+    def is_device_type(self, identifiers: set, expected_type: str) -> bool:
+        """Determine if the device is of a certain type"""
         return self.get_enocean_id(identifiers, expected_type) is not None
 
-    def get_enocean_id(self, identifiers: set, expected_type: str):
+    def get_enocean_id(self, identifiers: set, expected_type: str) -> str:
+        """Extract enocean identifier from home assistant device entry id."""
         for id in identifiers:
             if len(id) == 2 and expected_type in id[1]:
                 identifier_string = id[1]
@@ -182,7 +184,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_create_light(self, user_input=None):
-        """Add new light step"""
+        """Add new light step."""
         errors = {}
         if user_input is not None:
             dev_id = self.device_id_or_none(user_input[CONF_ID])
@@ -223,7 +225,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_create_event(self, user_input=None):
-        """Add new event step"""
+        """Add new event step."""
         errors = {}
         if user_input is not None:
             dev_id = self.device_id_or_none(user_input[CONF_ID])
@@ -256,7 +258,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_create_sensor(self, user_input=None):
-        """Add new sensor step"""
+        """Add new sensor step."""
         errors = {}
         if user_input is not None:
             dev_id = self.device_id_or_none(user_input[CONF_ID])
@@ -294,7 +296,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_create_switch(self, user_input=None):
-        """Add new switch step"""
+        """Add new switch step."""
         errors = {}
         if user_input is not None:
             dev_id = self.device_id_or_none(user_input[CONF_ID])
@@ -310,7 +312,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 errors[CONF_SENDER_ID] = "invalid_sender_id"
             user_input[CONF_ID] = dev_id
             user_input[CONF_SENDER_ID] = sender_id
-            if user_input[CONF_ALL_CHANNELS]:
+            if CONF_ALL_CHANNELS in user_input and user_input[CONF_ALL_CHANNELS]:
                 user_input[CONF_CHANNEL] = SWITCH_ALL_CHANNELS
             user_input.pop(CONF_ALL_CHANNELS, None)
             try:
@@ -342,6 +344,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_select_cover(self, user_input=None):
+        """Step to select a cover to be edited."""
         return await self.async_step_select_device(
             "cover",
             self.async_step_set_cover_options,
@@ -350,6 +353,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_select_cover_to_remove(self, user_input=None):
+        """Step to select a cover to be removed."""
         return await self.async_step_select_device(
             "cover",
             self.async_step_remove_cover,
@@ -358,6 +362,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_select_switch_to_remove(self, user_input=None):
+        """Step to select a switch to be removed."""
         return await self.async_step_select_device(
             "switch",
             self.async_step_remove_switch,
@@ -366,6 +371,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_select_light_to_remove(self, user_input=None):
+        """Step to select a light to be removed."""
         return await self.async_step_select_device(
             "light",
             self.async_step_remove_light,
@@ -374,6 +380,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_select_sensor_to_remove(self, user_input=None):
+        """Step to select a sensor to be removed."""
         return await self.async_step_select_device(
             "sensor",
             self.async_step_remove_sensor,
@@ -382,6 +389,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_select_event_to_remove(self, user_input=None):
+        """Step to select a event to be removed."""
         return await self.async_step_select_device(
             "event",
             self.async_step_remove_event,
@@ -390,6 +398,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_select_light(self, user_input=None):
+        """Step to select a light to be edited."""
         return await self.async_step_select_device(
             "light",
             self.async_step_set_light_options,
@@ -398,6 +407,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_select_event(self, user_input=None):
+        """Step to select a event to be edited."""
         return await self.async_step_select_device(
             "event",
             self.async_step_set_event_options,
@@ -408,7 +418,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_select_device(
         self, device_type, set_options_step, step_id, user_input=None
     ):
-        """Select a device."""
+        """Helper step to select a device of a given type and configuration."""
         DEVICE = "device"
         if user_input is not None:
             if DEVICE in user_input:
@@ -440,6 +450,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_select_sensor(self, user_input=None):
+        """Step to select a sensor to be edited."""
         return await self.async_step_select_device(
             "sensor",
             self.async_step_set_sensor_options,
@@ -448,6 +459,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_select_switch(self, user_input=None):
+        """Step to select a switch to be edited."""
         return await self.async_step_select_device(
             "switch",
             self.async_step_set_switch_options,
@@ -456,19 +468,14 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     def find_matching_config(self, device_type, config_key):
+        """Find the configuration for the given type"""
         device_id = self._selected_device_entry_id
         # find matching device entity to extract device id (part of unique id)
         for matching_device in filter(
             lambda x: x.id == device_id, self._device_entries
         ):
-            # self._config_entry.data[CONF_COVERS]
             id = self.get_enocean_id(matching_device.identifiers, device_type)
             if id in self._config_entry.data[config_key]:
-                # for matching_config in filter(
-                #     lambda x: list(map(lambda x: hex(x), x[CONF_ID]))
-                #     == self.get_enocean_id(matching_device.identifiers, "cover"),
-                #     self._config_entry.data[CONF_COVERS],
-                # ):
                 self._current_dev_config = self._config_entry.data[config_key][id]
                 self._current_dev_config_key = id
                 return
@@ -476,6 +483,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         self._current_dev_config_key = None
 
     def device_id_or_none(self, input):
+        """Validate device id format. Returns the id or None if invalid."""
         sender_id = []
         try:
             sender_id = list(map(lambda x: int(x, 16), input.split(",")))
@@ -487,6 +495,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return sender_id
 
     async def async_step_remove_cover(self, user_input=None):
+        """Remove cover step."""
         self.find_matching_config("cover", CONF_COVERS)
         if self._current_dev_config_key is not None:
             self._device_registry.async_remove_device(self._selected_device_entry_id)
@@ -495,6 +504,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_create_entry(title="", data=None)
 
     async def async_step_remove_switch(self, user_input=None):
+        """Remove switch step."""
         self.find_matching_config("switch", CONF_SWITCHES)
         if self._current_dev_config_key is not None:
             self._device_registry.async_remove_device(self._selected_device_entry_id)
@@ -502,6 +512,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_create_entry(title="", data=None)
 
     async def async_step_remove_light(self, user_input=None):
+        """Remove light step."""
         self.find_matching_config("light", CONF_LIGHTS)
         if self._current_dev_config_key is not None:
             self._device_registry.async_remove_device(self._selected_device_entry_id)
@@ -509,6 +520,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_create_entry(title="", data=None)
 
     async def async_step_remove_sensor(self, user_input=None):
+        """Remove sensor step."""
         self.find_matching_config("sensor", CONF_SENSORS)
         if self._current_dev_config_key is not None:
             self._device_registry.async_remove_device(self._selected_device_entry_id)
@@ -516,6 +528,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_create_entry(title="", data=None)
 
     async def async_step_remove_event(self, user_input=None):
+        """Remove event step."""
         self.find_matching_config("event", CONF_EVENTS)
         if self._current_dev_config_key is not None:
             self._device_registry.async_remove_device(self._selected_device_entry_id)
@@ -534,6 +547,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_create_entry(title="", data=None)
 
     async def async_step_set_cover_options(self, user_input=None):
+        """Edit cover options."""
         errors = {}
         self.find_matching_config("cover", CONF_COVERS)
         if user_input is not None and self._current_dev_config_key is not None:
@@ -586,6 +600,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_create_entry(title="", data=None)
 
     async def async_step_set_sensor_options(self, user_input=None):
+        """Edit sensor options."""
         errors = {}
         self.find_matching_config("sensor", CONF_SENSORS)
         if user_input is not None and self._current_dev_config_key is not None:
@@ -629,6 +644,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_create_entry(title="", data=None)
 
     async def async_step_set_switch_options(self, user_input=None):
+        """Edit switch options."""
         errors = {}
         self.find_matching_config("switch", CONF_SWITCHES)
         if user_input is not None and self._current_dev_config_key is not None:
@@ -639,7 +655,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 if sender_id is None:
                     errors[CONF_SENDER_ID] = "invalid_sender_id"
                 user_input[CONF_SENDER_ID] = sender_id
-                if user_input[CONF_ALL_CHANNELS]:
+                if CONF_ALL_CHANNELS in user_input and user_input[CONF_ALL_CHANNELS]:
                     user_input[CONF_CHANNEL] = SWITCH_ALL_CHANNELS
                 user_input.pop(CONF_ALL_CHANNELS, None)
                 data = SWITCH_SCHEMA(user_input)
@@ -681,6 +697,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_create_entry(title="", data=None)
 
     async def async_step_set_light_options(self, user_input=None):
+        """Edit light options."""
         errors = {}
         self.find_matching_config("light", CONF_LIGHTS)
         if user_input is not None and self._current_dev_config_key is not None:
@@ -720,6 +737,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_create_entry(title="", data=None)
 
     async def async_step_set_event_options(self, user_input=None):
+        """Edit event options."""
         errors = {}
         self.find_matching_config("event", CONF_EVENTS)
         if user_input is not None and self._current_dev_config_key is not None:
@@ -756,6 +774,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         events=None,
     ):
         """Update data in ConfigEntry."""
+        # Note, both removal as adding entries is not supported.
         removal = False
         entry_data = self._config_entry.data.copy()
         for platform, values in {

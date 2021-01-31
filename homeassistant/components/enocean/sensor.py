@@ -1,6 +1,6 @@
 """Support for EnOcean sensors."""
 from __future__ import annotations
-
+from enocean.utils import to_hex_string
 import voluptuous as vol
 
 from homeassistant.components.sensor import (
@@ -27,10 +27,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
-from .device import EnOceanEntity
 from .const import DOMAIN
-from enocean.utils import to_hex_string
-
+from .device import EnOceanEntity
 
 CONF_MAX_TEMP = "max_temp"
 CONF_MIN_TEMP = "min_temp"
@@ -181,7 +179,7 @@ class EnOceanSensor(EnOceanEntity, RestoreEntity, SensorEntity):
 
     @property
     def unique_id(self):
-        return "{0}-{1}".format("sensor", to_hex_string(self.dev_id))
+        return f"sensor-{to_hex_string(self.dev_id)}"
 
 
 class EnOceanPowerSensor(EnOceanSensor):
