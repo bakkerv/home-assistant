@@ -28,7 +28,7 @@ from homeassistant.helpers.entity_registry import (
 import voluptuous as vol
 import logging
 
-from .const import CONF_EVENTS, DOMAIN
+from .const import CONF_EVENTS, DATA_ENOCEAN, DOMAIN
 from .cover import (
     ENOCEAN_COVER_SCHEMA_DATA,
     ENOCEAN_COVER_SCHEMA,
@@ -44,7 +44,7 @@ from .sensor import (
     SENSOR_TYPES,
     SENSOR_SCHEMA,
 )
-from .enocean_event import EVENT_SCHEMA
+from .enocean_event import EVENT_SCHEMA, EnOceanEvent
 
 from .switch import CONF_CHANNEL, SWITCH_SCHEMA, SWITCH_ALL_CHANNELS
 from .light import LIGHT_SCHEMA
@@ -520,6 +520,17 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if self._current_dev_config_key is not None:
             self._device_registry.async_remove_device(self._selected_device_entry_id)
             self.update_config_data(events={self._current_dev_config_key: None})
+            if (
+                self._selected_device_entry_id
+                in self.hass.data[DATA_ENOCEAN][CONF_EVENTS]
+            ):
+                self.hass.data[DATA_ENOCEAN][CONF_EVENTS][
+                    self._selected_device_entry_id
+                ].disconnect()
+                self.hass.data[DATA_ENOCEAN][CONF_EVENTS].pop(
+                    self._selected_device_entry_id
+                )
+
         return self.async_create_entry(title="", data=None)
 
     async def async_step_set_cover_options(self, user_input=None):

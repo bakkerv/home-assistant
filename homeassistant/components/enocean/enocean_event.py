@@ -1,5 +1,6 @@
 """Support for EnOcean buttons"""
 from __future__ import annotations
+from homeassistant.core import HomeAssistant
 import voluptuous as vol
 
 from homeassistant.const import CONF_DEVICE_CLASS, CONF_ID, CONF_NAME
@@ -9,7 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from enocean.utils import to_hex_string
 
 from .device import EnOceanEntity
-from .const import CONF_EVENTS, DOMAIN
+from .const import CONF_EVENTS, DATA_ENOCEAN, DOMAIN, SIGNAL_RECEIVE_MESSAGE
 
 DEFAULT_NAME = "EnOcean button"
 EVENT_BUTTON_PRESSED = "button_pressed"
@@ -21,9 +22,10 @@ EVENT_SCHEMA_DATA = {
 
 EVENT_SCHEMA = vol.Schema(EVENT_SCHEMA_DATA)
 
-async def async_setup_events(hass, configEntry: ConfigEntry):
+async def async_setup_events(hass: HomeAssistant, configEntry: ConfigEntry):
     if not CONF_EVENTS in configEntry.data:
         return
+    hass.data[DATA_ENOCEAN][CONF_EVENTS] = dict()
     for config in configEntry.data[CONF_EVENTS].values():
         new_event = create_entity_from_config(config, hass, configEntry.entry_id)
         hass.async_create_task(new_event.async_update_device_registry())
@@ -45,13 +47,14 @@ class EnOceanEvent(EnOceanEntity):
     """
 
     def __init__(self, dev_id, dev_name, hass, config_entry_id):
-        """Initialize the EnOcean binary sensor."""
+        """Initialize the EnOcean event."""
         super().__init__(dev_id, dev_name)
         self.which = -1
         self.onoff = -1
         self.config_entry_id = config_entry_id
         self.device_entry_id = None
         self.hass = hass
+        self.disconnect_dispatcher = None
 
     @property
     def name(self):
@@ -108,10 +111,11 @@ class EnOceanEvent(EnOceanEntity):
             EVENT_BUTTON_PRESSED,
             {
                 "id": self.dev_id,
+                "id_as_hex": to_hex_string(self.dev_id),
                 "pushed": pushed,
                 "which": self.which,
                 "onoff": self.onoff,
-                "entity_id": self.entity_id,
+                "name": self.name,
             },
         )
 
@@ -129,6 +133,11 @@ class EnOceanEvent(EnOceanEntity):
     def unique_id(self):
         return "{0}-{1}".format("event", to_hex_string(self.dev_id))
 
+    def disconnect(self):
+        if self.disconnect_dispatcher != None:
+            self.disconnect_dispatcher()
+            self.disconnect_dispatcher = None
+
     async def async_update_device_registry(self):
         """Update device registry."""
         device_registry = await self.hass.helpers.device_registry.async_get_registry()
@@ -137,4 +146,9 @@ class EnOceanEvent(EnOceanEntity):
             config_entry_id=self.config_entry_id, **self.device_info
         )
         self.device_entry_id = entry.id
-        await self.async_added_to_hass()
+        self.disconnect_dispatcher = (
+            self.hass.helpers.dispatcher.async_dispatcher_connect(
+                SIGNAL_RECEIVE_MESSAGE, self._message_received_callback
+            )
+        )
+        self.hass.data[DATA_ENOCEAN][CONF_EVENTS][self.device_entry_id] = self
