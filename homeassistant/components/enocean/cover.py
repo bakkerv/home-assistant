@@ -52,6 +52,12 @@ STATE_STOPPED = 1
 STATE_OPENING = 2
 STATE_CLOSING = 3
 
+A5_FUNCTION_STATUS_REQUEST = 0
+A5_FUNCTION_BLIND_STOP = 1
+A5_FUNCTION_BLIND_OPEN = 2
+A5_FUNCTION_BLIND_CLOSE = 3
+A5_FUNCTION_TO_POSITION = 4
+
 
 async def async_setup_entry(
     hass,
@@ -99,7 +105,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
         super().__init__(dev_id, dev_name)
         self.sender_id = sender_id
         self.cover_state = STATE_NO_STATE
-        self.closed = False
+        self.closed = None
         self.current_position = None
 
     @property
@@ -118,9 +124,18 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
             packet.parse_eep(0x11, 0x03)
             if "PVF" in packet.parsed:
                 # Position data available
-                self.current_position = packet.parsed["BSP"]["raw_value"]
+                mode_of_position = 0  # normal mode as default
+                if "MOTP" in packet.parsed:
+                    mode_of_position = packet.parsed["MOTP"]["raw_value"]
+                if mode_of_position == 0:  # Normal mode
+                    self.current_position = packet.parsed["BSP"]["raw_value"]
+                else:
+                    self.current_position = 100 - packet.parsed["BSP"]["raw_value"]
+                _LOGGER.debug(
+                    f"Updated position {mode_of_position} {packet.parsed['BSP']['raw_value']} {self.current_position}"
+                )
             if "EP" in packet.parsed:
-                ep = packet.parsed["EP"]["raw_value"]
+                ep = packet.parsed["EP"]["raw_value"]  # EP = End Position
                 if ep == 2:
                     self.closed = False
                 if ep == 3:
@@ -149,6 +164,8 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
 
     @property
     def is_closed(self):
+        if self.closed is None:
+            self.request_current_state()
         """Return if the cover is closed or not."""
         return self.closed
 
@@ -162,7 +179,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
             destination=self.dev_id,
             command=7,  # Blind
             COM=7,
-            FUNC=2,  # Blinds open
+            FUNC=A5_FUNCTION_BLIND_OPEN,  # Blinds open
             LRNB=1,  # Data telegram
             SSF=1,  # No send new status
             PAF=0,  # No position and angle flag
@@ -180,7 +197,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
             destination=self.dev_id,
             command=7,  # Blind
             COM=7,
-            FUNC=3,  # Blinds close
+            FUNC=A5_FUNCTION_BLIND_CLOSE,  # Blinds close
             LRNB=1,  # Data telegram
             SSF=1,  # No Send new status
             PAF=0,  # No position and angle flag
@@ -201,7 +218,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
             destination=self.dev_id,
             command=7,  # Blind
             COM=7,
-            FUNC=4,  # Drive to position
+            FUNC=A5_FUNCTION_TO_POSITION,  # Drive to position
             LRNB=1,  # Data telegram
             SSF=1,  # No Send new status
             PAF=1,  # No position and angle flag
@@ -221,7 +238,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
             destination=self.dev_id,
             COM=7,
             command=7,  # Blind
-            FUNC=1,  # Blinds stop
+            FUNC=A5_FUNCTION_BLIND_STOP,  # Blinds stop
             LRNB=1,  # Data telegram
             SSF=1,  # Send new status
             PAF=0,  # No position and angle flag
@@ -240,7 +257,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
             destination=self.dev_id,
             command=7,  # Blind
             COM=7,
-            FUNC=0,  # Request status
+            FUNC=A5_FUNCTION_STATUS_REQUEST,  # Request status
             LRNB=1,  # Data telegram
             SSF=0,  # Send new status
             PAF=0,  # No position and angle flag
