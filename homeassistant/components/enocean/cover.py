@@ -148,8 +148,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
     def current_cover_position(self):
         """Return current position of cover. None is unknown, 0 is closed, 100 is fully open."""
         if self.current_position is None:
-            self.request_current_state()
-            return 100
+            return None
         return 100 - self.current_position
 
     @property
@@ -164,12 +163,10 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
 
     @property
     def is_closed(self):
-        if self.closed is None:
-            self.request_current_state()
         """Return if the cover is closed or not."""
         return self.closed
 
-    def open_cover(self, **kwargs: Any) -> None:
+    async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the cover."""
         packet = RadioPacket.create(
             rorg=RORG.BS4,
@@ -185,9 +182,9 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
             PAF=0,  # No position and angle flag
             SMF=0,  # No service mode
         )
-        self.send_packet(packet)
+        await self.async_send_packet(packet)
 
-    def close_cover(self, **kwargs: Any) -> None:
+    async def async_close_cover(self, **kwargs: Any) -> None:
         """Close cover."""
         packet = RadioPacket.create(
             rorg=RORG.BS4,
@@ -205,7 +202,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
         )
         self.send_packet(packet)
 
-    def set_cover_position(self, **kwargs):
+    async def async_set_cover_position(self, **kwargs):
         """Move the cover to a specific position."""
         pos = kwargs[ATTR_POSITION]
         if pos < 0 or pos > 100:
@@ -226,9 +223,9 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
             P1=100 - pos,  # Set position
             P2=0,  # No angle
         )
-        self.send_packet(packet)
+        await self.async_send_packet(packet)
 
-    def stop_cover(self, **kwargs):
+    async def async_stop_cover(self, **kwargs):
         """Stop the cover."""
         packet = RadioPacket.create(
             rorg=RORG.BS4,
@@ -244,9 +241,12 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
             PAF=0,  # No position and angle flag
             SMF=0,  # No service mode
         )
-        self.send_packet(packet)
+        await self.async_send_packet(packet)
 
-    def request_current_state(self):
+    async def async_update(self):
+        await self.async_request_current_state()
+
+    async def async_request_current_state(self):
         """Request current state."""
 
         packet = RadioPacket.create(
@@ -264,7 +264,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
             SMF=0,  # No service mode
         )
         _LOGGER.debug("Requesting current state")
-        self.send_packet(packet)
+        await self.async_send_packet(packet)
 
     @property
     def device_info(self):
@@ -322,11 +322,10 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
     def current_cover_position(self):
         """Return current position of cover. None is unknown, 0 is closed, 100 is fully open."""
         if self.current_position is None:
-            self.request_current_state()
             return None
         return 100 - self.current_position
 
-    def set_cover_position(self, **kwargs):
+    async def async_set_cover_position(self, **kwargs):
         """Move the cover to a specific position."""
         pos = kwargs[ATTR_POSITION]
         if pos < 0 or pos > 100:
@@ -344,10 +343,10 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
             LOCK=0,  # No change
             CHN=0,  # set channel, fixed to channel 1
         )
-        self.send_packet(packet)
+        await self.async_send_packet(packet)
         self.target_position = pos
 
-    def stop_cover(self, **kwargs):
+    async def async_stop_cover(self, **kwargs):
         """Stop the cover."""
         packet = RadioPacket.create(
             rorg=RORG.VLD,
@@ -358,10 +357,10 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
             command=2,  # Stop
             CHN=0,  # set channel, fixed to channel 1
         )
-        self.send_packet(packet)
+        await self.async_send_packet(packet)
         self.target_position = None
 
-    def request_current_state(self):
+    async def async_request_current_state(self):
         """Request current state."""
 
         packet = RadioPacket.create(
@@ -374,7 +373,7 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
             CHN=0,  # set channel, fixed to channel 1
         )
         _LOGGER.debug("Requesting current state")
-        self.send_packet(packet)
+        await self.async_send_packet(packet)
 
     @property
     def is_opening(self):
@@ -394,13 +393,13 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
             return False
         return self.current_cover_position > self.target_position
 
-    def open_cover(self, **kwargs: Any) -> None:
+    async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the cover."""
-        self.set_cover_position(position=100)
+        await self.async_set_cover_position(position=100)
 
-    def close_cover(self, **kwargs: Any) -> None:
+    async def async_close_cover(self, **kwargs: Any) -> None:
         """Close cover."""
-        self.set_cover_position(position=0)
+        await self.async_set_cover_position(position=0)
 
     @property
     def device_info(self):
@@ -415,3 +414,6 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
     @property
     def unique_id(self):
         return f"cover-{to_hex_string(self.dev_id)}"
+
+    async def async_update(self):
+        await self.async_request_current_state()

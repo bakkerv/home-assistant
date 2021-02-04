@@ -117,18 +117,6 @@ async def test_cover_has_initial_state_unknown(hass_with_cover_and_send_signals)
     hass, send_messages = hass_with_cover_and_send_signals
     state = hass.states.get("cover.test")
     assert state.state == STATE_UNKNOWN
-    await hass.async_block_till_done()
-    # check is a request for a state is done
-
-    def is_request(packet):
-        packet.parse_eep(0x38, 0x08)
-        return (
-            packet.parsed["FUNC"]["raw_value"] == A5_FUNCTION_STATUS_REQUEST
-            and packet.sender == SENDER_ID
-            and packet.destination == COVER_ID
-        )
-
-    assert any(map(lambda x: is_request(x[0]), send_messages))
 
 
 async def test_cover_close_command_sends_close_message(
@@ -277,7 +265,7 @@ async def test_cover_closing_message_set_state_to_closing(
     assert state.attributes["current_position"] == 75
 
 
-async def test_cover_opening_message_set_state_to_opening(
+async def test_cover_opening_message_set_state_to_opening_inverse_motp(
     hass_with_cover_and_send_signals, opening_enocean_message_inverse_motp
 ):
     hass, _ = hass_with_cover_and_send_signals

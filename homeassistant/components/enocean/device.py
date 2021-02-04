@@ -41,3 +41,7 @@ class EnOceanEntity(Entity):
     def send_packet(self, packet):
         """Send a packet via the EnOcean dongle."""
         self.hass.helpers.dispatcher.dispatcher_send(SIGNAL_SEND_MESSAGE, packet)
+
+    async def async_send_packet(self, packet):
+        """Send a packet via the EnOcean dongle."""
+        self.hass.helpers.dispatcher.async_dispatcher_send(SIGNAL_SEND_MESSAGE, packet)
