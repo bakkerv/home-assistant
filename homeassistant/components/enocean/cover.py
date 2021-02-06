@@ -321,6 +321,7 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
     @property
     def current_cover_position(self):
         """Return current position of cover. None is unknown, 0 is closed, 100 is fully open."""
+        # Within protocol, 0 = up, 100 = down
         if self.current_position is None:
             return None
         return 100 - self.current_position
