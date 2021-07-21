@@ -16,9 +16,10 @@ ATTR_ALTITUDE = "altitude"
 ATTR_CONNECTION_STATE = "connection_state"
 ATTR_IS_DEAD = "is_dead"
 ATTR_IS_LOST = "is_lost"
+ATTR_LAST_LOST_TIMESTAMP = "last_lost_timestamp"
 ATTR_RING_STATE = "ring_state"
-ATTR_VOIP_STATE = "voip_state"
 ATTR_TILE_NAME = "tile_name"
+ATTR_VOIP_STATE = "voip_state"
 
 DEFAULT_ATTRIBUTION = "Data provided by Tile"
 DEFAULT_ICON = "mdi:view-grid"
@@ -29,7 +30,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities(
         [
             TileDeviceTracker(
-                hass.data[DOMAIN][DATA_COORDINATOR][entry.entry_id][tile_uuid], tile
+                entry,
+                hass.data[DOMAIN][DATA_COORDINATOR][entry.entry_id][tile_uuid],
+                tile,
             )
             for tile_uuid, tile in hass.data[DOMAIN][DATA_TILE][entry.entry_id].items()
         ]
@@ -60,10 +63,11 @@ async def async_setup_scanner(hass, config, async_see, discovery_info=None):
 class TileDeviceTracker(CoordinatorEntity, TrackerEntity):
     """Representation of a network infrastructure device."""
 
-    def __init__(self, coordinator, tile):
+    def __init__(self, entry, coordinator, tile):
         """Initialize."""
         super().__init__(coordinator)
         self._attrs = {ATTR_ATTRIBUTION: DEFAULT_ATTRIBUTION}
+        self._entry = entry
         self._tile = tile
 
     @property
@@ -80,7 +84,7 @@ class TileDeviceTracker(CoordinatorEntity, TrackerEntity):
         return None
 
     @property
-    def device_state_attributes(self):
+    def extra_state_attributes(self):
         """Return the device state attributes."""
         return self._attrs
 
@@ -115,7 +119,7 @@ class TileDeviceTracker(CoordinatorEntity, TrackerEntity):
     @property
     def unique_id(self):
         """Return the unique ID of the entity."""
-        return f"tile_{self._tile.uuid}"
+        return f"{self._entry.data[CONF_USERNAME]}_{self._tile.uuid}"
 
     @property
     def source_type(self):
@@ -135,6 +139,7 @@ class TileDeviceTracker(CoordinatorEntity, TrackerEntity):
             {
                 ATTR_ALTITUDE: self._tile.altitude,
                 ATTR_IS_LOST: self._tile.lost,
+                ATTR_LAST_LOST_TIMESTAMP: self._tile.lost_timestamp,
                 ATTR_RING_STATE: self._tile.ring_state,
                 ATTR_VOIP_STATE: self._tile.voip_state,
             }

@@ -1,17 +1,39 @@
 """Test the Z-Wave JS cover platform."""
 from zwave_js_server.event import Event
 
-from homeassistant.components.cover import ATTR_CURRENT_POSITION
+from homeassistant.components.cover import (
+    ATTR_CURRENT_POSITION,
+    DEVICE_CLASS_BLIND,
+    DEVICE_CLASS_GARAGE,
+    DEVICE_CLASS_SHUTTER,
+    DEVICE_CLASS_WINDOW,
+    DOMAIN,
+    SERVICE_CLOSE_COVER,
+    SERVICE_OPEN_COVER,
+)
+from homeassistant.const import (
+    ATTR_DEVICE_CLASS,
+    STATE_CLOSED,
+    STATE_CLOSING,
+    STATE_OPEN,
+    STATE_OPENING,
+    STATE_UNKNOWN,
+)
 
-WINDOW_COVER_ENTITY = "cover.zws_12_current_value"
+WINDOW_COVER_ENTITY = "cover.zws_12"
+GDC_COVER_ENTITY = "cover.aeon_labs_garage_door_controller_gen5"
+BLIND_COVER_ENTITY = "cover.window_blind_controller"
+SHUTTER_COVER_ENTITY = "cover.flush_shutter_dc"
 
 
-async def test_cover(hass, client, chain_actuator_zws12, integration):
-    """Test the light entity."""
+async def test_window_cover(hass, client, chain_actuator_zws12, integration):
+    """Test the cover entity."""
     node = chain_actuator_zws12
     state = hass.states.get(WINDOW_COVER_ENTITY)
 
     assert state
+    assert state.attributes[ATTR_DEVICE_CLASS] == DEVICE_CLASS_WINDOW
+
     assert state.state == "closed"
     assert state.attributes[ATTR_CURRENT_POSITION] == 0
 
@@ -95,14 +117,16 @@ async def test_cover(hass, client, chain_actuator_zws12, integration):
         "commandClassName": "Multilevel Switch",
         "commandClass": 38,
         "endpoint": 0,
-        "property": "Open",
-        "propertyName": "Open",
+        "property": "targetValue",
+        "propertyName": "targetValue",
         "metadata": {
-            "type": "boolean",
+            "label": "Target value",
+            "max": 99,
+            "min": 0,
+            "type": "number",
             "readable": True,
             "writeable": True,
-            "label": "Perform a level change (Open)",
-            "ccSpecific": {"switchType": 3},
+            "label": "Target value",
         },
     }
     assert args["value"]
@@ -194,17 +218,19 @@ async def test_cover(hass, client, chain_actuator_zws12, integration):
         "commandClassName": "Multilevel Switch",
         "commandClass": 38,
         "endpoint": 0,
-        "property": "Close",
-        "propertyName": "Close",
+        "property": "targetValue",
+        "propertyName": "targetValue",
         "metadata": {
-            "type": "boolean",
+            "label": "Target value",
+            "max": 99,
+            "min": 0,
+            "type": "number",
             "readable": True,
             "writeable": True,
-            "label": "Perform a level change (Close)",
-            "ccSpecific": {"switchType": 3},
+            "label": "Target value",
         },
     }
-    assert args["value"]
+    assert args["value"] == 0
 
     client.async_send_command.reset_mock()
 
@@ -278,3 +304,213 @@ async def test_cover(hass, client, chain_actuator_zws12, integration):
 
     state = hass.states.get(WINDOW_COVER_ENTITY)
     assert state.state == "closed"
+
+
+async def test_blind_cover(hass, client, iblinds_v2, integration):
+    """Test a blind cover entity."""
+    state = hass.states.get(BLIND_COVER_ENTITY)
+
+    assert state
+    assert state.attributes[ATTR_DEVICE_CLASS] == DEVICE_CLASS_BLIND
+
+
+async def test_shutter_cover(hass, client, qubino_shutter, integration):
+    """Test a shutter cover entity."""
+    state = hass.states.get(SHUTTER_COVER_ENTITY)
+
+    assert state
+    assert state.attributes[ATTR_DEVICE_CLASS] == DEVICE_CLASS_SHUTTER
+
+
+async def test_motor_barrier_cover(hass, client, gdc_zw062, integration):
+    """Test the cover entity."""
+    node = gdc_zw062
+
+    state = hass.states.get(GDC_COVER_ENTITY)
+    assert state
+    assert state.attributes[ATTR_DEVICE_CLASS] == DEVICE_CLASS_GARAGE
+
+    assert state.state == STATE_CLOSED
+
+    # Test open
+    await hass.services.async_call(
+        DOMAIN, SERVICE_OPEN_COVER, {"entity_id": GDC_COVER_ENTITY}, blocking=True
+    )
+
+    assert len(client.async_send_command.call_args_list) == 1
+    args = client.async_send_command.call_args[0][0]
+    assert args["command"] == "node.set_value"
+    assert args["nodeId"] == 12
+    assert args["value"] == 255
+    assert args["valueId"] == {
+        "ccVersion": 0,
+        "commandClass": 102,
+        "commandClassName": "Barrier Operator",
+        "endpoint": 0,
+        "metadata": {
+            "label": "Target Barrier State",
+            "max": 255,
+            "min": 0,
+            "readable": True,
+            "states": {"0": "Closed", "255": "Open"},
+            "type": "number",
+            "writeable": True,
+        },
+        "property": "targetState",
+        "propertyName": "targetState",
+    }
+
+    # state doesn't change until currentState value update is received
+    state = hass.states.get(GDC_COVER_ENTITY)
+    assert state.state == STATE_CLOSED
+
+    client.async_send_command.reset_mock()
+
+    # Test close
+    await hass.services.async_call(
+        DOMAIN, SERVICE_CLOSE_COVER, {"entity_id": GDC_COVER_ENTITY}, blocking=True
+    )
+
+    assert len(client.async_send_command.call_args_list) == 1
+    args = client.async_send_command.call_args[0][0]
+    assert args["command"] == "node.set_value"
+    assert args["nodeId"] == 12
+    assert args["value"] == 0
+    assert args["valueId"] == {
+        "ccVersion": 0,
+        "commandClass": 102,
+        "commandClassName": "Barrier Operator",
+        "endpoint": 0,
+        "metadata": {
+            "label": "Target Barrier State",
+            "max": 255,
+            "min": 0,
+            "readable": True,
+            "states": {"0": "Closed", "255": "Open"},
+            "type": "number",
+            "writeable": True,
+        },
+        "property": "targetState",
+        "propertyName": "targetState",
+    }
+
+    # state doesn't change until currentState value update is received
+    state = hass.states.get(GDC_COVER_ENTITY)
+    assert state.state == STATE_CLOSED
+
+    client.async_send_command.reset_mock()
+
+    # Barrier sends an opening state
+    event = Event(
+        type="value updated",
+        data={
+            "source": "node",
+            "event": "value updated",
+            "nodeId": 12,
+            "args": {
+                "commandClassName": "Barrier Operator",
+                "commandClass": 102,
+                "endpoint": 0,
+                "property": "currentState",
+                "newValue": 254,
+                "prevValue": 0,
+                "propertyName": "currentState",
+            },
+        },
+    )
+    node.receive_event(event)
+
+    state = hass.states.get(GDC_COVER_ENTITY)
+    assert state.state == STATE_OPENING
+
+    # Barrier sends an opened state
+    event = Event(
+        type="value updated",
+        data={
+            "source": "node",
+            "event": "value updated",
+            "nodeId": 12,
+            "args": {
+                "commandClassName": "Barrier Operator",
+                "commandClass": 102,
+                "endpoint": 0,
+                "property": "currentState",
+                "newValue": 255,
+                "prevValue": 254,
+                "propertyName": "currentState",
+            },
+        },
+    )
+    node.receive_event(event)
+
+    state = hass.states.get(GDC_COVER_ENTITY)
+    assert state.state == STATE_OPEN
+
+    # Barrier sends a closing state
+    event = Event(
+        type="value updated",
+        data={
+            "source": "node",
+            "event": "value updated",
+            "nodeId": 12,
+            "args": {
+                "commandClassName": "Barrier Operator",
+                "commandClass": 102,
+                "endpoint": 0,
+                "property": "currentState",
+                "newValue": 252,
+                "prevValue": 255,
+                "propertyName": "currentState",
+            },
+        },
+    )
+    node.receive_event(event)
+
+    state = hass.states.get(GDC_COVER_ENTITY)
+    assert state.state == STATE_CLOSING
+
+    # Barrier sends a closed state
+    event = Event(
+        type="value updated",
+        data={
+            "source": "node",
+            "event": "value updated",
+            "nodeId": 12,
+            "args": {
+                "commandClassName": "Barrier Operator",
+                "commandClass": 102,
+                "endpoint": 0,
+                "property": "currentState",
+                "newValue": 0,
+                "prevValue": 252,
+                "propertyName": "currentState",
+            },
+        },
+    )
+    node.receive_event(event)
+
+    state = hass.states.get(GDC_COVER_ENTITY)
+    assert state.state == STATE_CLOSED
+
+    # Barrier sends a stopped state
+    event = Event(
+        type="value updated",
+        data={
+            "source": "node",
+            "event": "value updated",
+            "nodeId": 12,
+            "args": {
+                "commandClassName": "Barrier Operator",
+                "commandClass": 102,
+                "endpoint": 0,
+                "property": "currentState",
+                "newValue": 253,
+                "prevValue": 252,
+                "propertyName": "currentState",
+            },
+        },
+    )
+    node.receive_event(event)
+
+    state = hass.states.get(GDC_COVER_ENTITY)
+    assert state.state == STATE_UNKNOWN
