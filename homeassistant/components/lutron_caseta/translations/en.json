@@ -8,7 +8,7 @@
         "error": {
             "cannot_connect": "Failed to connect"
         },
-        "flow_title": "Lutron Cas\u00e9ta {name} ({host})",
+        "flow_title": "{name} ({host})",
         "step": {
             "import_failed": {
                 "description": "Couldn\u2019t setup bridge (host: {host}) imported from configuration.yaml.",
@@ -22,8 +22,8 @@
                 "data": {
                     "host": "Host"
                 },
-                "description": "Enter the ip address of the device.",
-                "title": "Automaticlly connect to the bridge"
+                "description": "Enter the IP address of the device.",
+                "title": "Automatically connect to the bridge"
             }
         }
     },
