@@ -10,12 +10,14 @@ import voluptuous as vol
 from homeassistant.components import enocean
 from homeassistant.components.cover import (
     ATTR_POSITION,
+    ATTR_TILT_POSITION,
     PLATFORM_SCHEMA,
     SUPPORT_CLOSE,
     SUPPORT_OPEN,
     SUPPORT_SET_POSITION,
     SUPPORT_STOP,
     CoverEntity,
+    SUPPORT_SET_TILT_POSITION,
 )
 from homeassistant.const import CONF_COVERS, CONF_DEVICES, CONF_ID, CONF_NAME, CONF_TYPE
 import homeassistant.helpers.config_validation as cv
@@ -28,9 +30,11 @@ _LOGGER = logging.getLogger(__name__)
 CONF_SENDER_ID = "sender_id"
 CONF_USE_VLD = "use_vld"
 CONF_CHANNEL = "channel"
+CONF_TILT_SUPPORT = "tilt"
 
 DEFAULT_NAME = "EnOcean Cover"
 DEFAULT_USE_VLD = False
+DEFAULT_TILT_SUPPORT = False
 SUPPORT_ENOCEAN = SUPPORT_CLOSE | SUPPORT_OPEN | SUPPORT_SET_POSITION | SUPPORT_STOP
 VLD_SUPPORT_ENOCEAN = SUPPORT_SET_POSITION | SUPPORT_STOP
 
@@ -40,6 +44,7 @@ ENOCEAN_COVER_SCHEMA_DATA = {
     vol.Required(CONF_SENDER_ID): vol.All(cv.ensure_list, [vol.Coerce(int)]),
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
     vol.Optional(CONF_USE_VLD, default=DEFAULT_USE_VLD): cv.boolean,
+    vol.Optional(CONF_TILT_SUPPORT, default=DEFAULT_TILT_SUPPORT): cv.boolean,
 }
 
 ENOCEAN_COVER_SCHEMA = vol.Schema(ENOCEAN_COVER_SCHEMA_DATA)
@@ -85,11 +90,12 @@ def create_entity_from_config(config):
     dev_id = config.get(CONF_ID)
     use_vld = config.get(CONF_USE_VLD)
     channel = config.get(CONF_CHANNEL)
+    tilt_support = config.get(CONF_TILT_SUPPORT)
 
     if use_vld:
         return EnOceanVldCover(sender_id, dev_id, dev_name, channel)
     else:
-        return EnOceanCover(sender_id, dev_id, dev_name)
+        return EnOceanCover(sender_id, dev_id, dev_name, tilt_support)
 
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
@@ -100,13 +106,15 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 class EnOceanCover(EnOceanEntity, CoverEntity):
     """Representation of an EnOcean cover source."""
 
-    def __init__(self, sender_id, dev_id, dev_name):
+    def __init__(self, sender_id, dev_id, dev_name, tilt_support=False):
         """Initialize the EnOcean cover source."""
         super().__init__(dev_id, dev_name)
         self.sender_id = sender_id
         self.cover_state = STATE_NO_STATE
         self.closed = None
         self.current_position = None
+        self.tilt_support = tilt_support
+        self.tilt = None
 
     @property
     def name(self):
@@ -116,13 +124,15 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
     @property
     def supported_features(self):
         """Flag supported features."""
+        if self.tilt_support:
+            return SUPPORT_ENOCEAN | SUPPORT_SET_TILT_POSITION
         return SUPPORT_ENOCEAN
 
     def value_changed(self, packet):
         """Update the internal state of this device."""
         if packet.data[0] == 0xA5:
             packet.parse_eep(0x11, 0x03)
-            if "PVF" in packet.parsed:
+            if "PVF" in packet.parsed and packet.parsed["PVF"]["raw_value"] == 1:
                 # Position data available
                 mode_of_position = 0  # normal mode as default
                 if "MOTP" in packet.parsed:
@@ -134,6 +144,13 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
                 _LOGGER.debug(
                     f"Updated position {mode_of_position} {packet.parsed['BSP']['raw_value']} {self.current_position}"
                 )
+            if "AVF" in packet.parsed and packet.parsed["AVF"]["raw_value"] == 1:
+                angle_sign = packet.parsed["AS"]["raw_value"]  # 0 positive, 1 negative
+                # Angle 0 - 180
+                angle_value = packet.parsed["AV"]["value"]
+                self.tilt = self.angle_to_tilt(
+                    angle_value * 1 if angle_sign == 0 else -1
+                )
             if "EP" in packet.parsed:
                 ep = packet.parsed["EP"]["raw_value"]  # EP = End Position
                 if ep == 2:
@@ -143,6 +160,25 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
             if "ST" in packet.parsed:
                 self.cover_state = packet.parsed["ST"]["raw_value"]
             self.schedule_update_ha_state()
+
+    def angle_to_tilt(self, angle):
+        """ Transform an angle between -180 and 180 to an tile value (0--100)"""
+        # -180 == shut, 180 == open
+        # HA: 0 == closed, 100 == open
+        if angle < -180 or angle > 180:
+            return 0
+        return int((angle + 180) / 3.6)
+
+    def tilt_to_angle(self, tilt):
+        if tilt is None or tilt > 100 or tilt < 0:
+            return 0
+        return int((tilt * 3.6) - 180)
+
+    def encode_angle(self, tilt: int) -> int:
+        angle = self.tilt_to_angle(tilt)
+        # angle -180 .. 180
+        fb = 0x0 if angle >= 0 else 0x80
+        return fb | (abs(angle) >> 1)
 
     @property
     def current_cover_position(self):
@@ -160,6 +196,11 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
     def is_closing(self):
         """Return if the cover is closing or not."""
         return self.cover_state == STATE_CLOSING
+
+    @property
+    def current_cover_tilt_position(self):
+        """Return current cover tilt position"""
+        return self.tilt
 
     @property
     def is_closed(self):
@@ -221,7 +262,32 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
             PAF=1,  # No position and angle flag
             SMF=0,  # No service mode
             P1=100 - pos,  # Set position
-            P2=0,  # No angle
+            P2=self.encode_angle(self.tilt),  # angle
+        )
+        await self.async_send_packet(packet)
+
+    async def async_set_cover_tilt_position(self, **kwargs):
+        """Move the cover tilt to a specific position."""
+        tilt = kwargs[ATTR_TILT_POSITION]
+        if tilt < 0 or tilt > 100:
+            return
+        packet = RadioPacket.create(
+            rorg=RORG.BS4,
+            rorg_func=0x38,
+            rorg_type=0x08,
+            sender=self.sender_id,
+            destination=self.dev_id,
+            command=7,  # Blind
+            COM=7,
+            FUNC=A5_FUNCTION_TO_POSITION,  # Drive to position
+            LRNB=1,  # Data telegram
+            SSF=1,  # No Send new status
+            PAF=1,  # No position and angle flag
+            SMF=0,  # No service mode
+            P1=100 - self.current_cover_position
+            if self.current_cover_position
+            else 0,  # Set position
+            P2=self.encode_angle(self.tilt),  # angle
         )
         await self.async_send_packet(packet)
 

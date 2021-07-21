@@ -18,6 +18,7 @@ from homeassistant.components.enocean.cover import (
     A5_FUNCTION_STATUS_REQUEST,
     A5_FUNCTION_TO_POSITION,
     CONF_SENDER_ID,
+    CONF_TILT_SUPPORT,
 )
 from homeassistant.const import (
     CONF_COVERS,
@@ -59,6 +60,28 @@ async def config_entry_with_enocean_cover(hass: HomeAssistant) -> MockConfigEntr
 
 
 @pytest.fixture
+async def config_entry_with_enocean_cover_with_tilt(
+    hass: HomeAssistant,
+) -> MockConfigEntry:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_DEVICE: "/somePath",
+            CONF_COVERS: {
+                "0x01:0x01:0x01:0x01": {
+                    CONF_ID: COVER_ID,
+                    CONF_SENDER_ID: SENDER_ID,
+                    CONF_NAME: "test",
+                    CONF_TILT_SUPPORT: True,
+                }
+            },
+        },
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+@pytest.fixture
 def dongle_mock():
     return AsyncMock()
 
@@ -71,6 +94,22 @@ async def hass_with_cover_and_send_signals(
         sc.return_value = dongle_mock
         send_messages = async_mock_signal(hass, SIGNAL_SEND_MESSAGE)
         await hass.config_entries.async_setup(config_entry_with_enocean_cover.entry_id)
+        await hass.async_block_till_done()
+        return (hass, send_messages)
+
+
+@pytest.fixture
+async def hass_with_tilt_cover_and_send_signals(
+    hass: HomeAssistant,
+    config_entry_with_enocean_cover_with_tilt: MockConfigEntry,
+    dongle_mock,
+):
+    with patch("homeassistant.components.enocean.EnOceanDongle", autospec=True) as sc:
+        sc.return_value = dongle_mock
+        send_messages = async_mock_signal(hass, SIGNAL_SEND_MESSAGE)
+        await hass.config_entries.async_setup(
+            config_entry_with_enocean_cover_with_tilt.entry_id
+        )
         await hass.async_block_till_done()
         return (hass, send_messages)
 
@@ -115,6 +154,14 @@ def opening_enocean_message_inverse_motp():
 
 async def test_cover_has_initial_state_unknown(hass_with_cover_and_send_signals):
     hass, send_messages = hass_with_cover_and_send_signals
+    state = hass.states.get("cover.test")
+    assert state.state == STATE_UNKNOWN
+
+
+async def test_tilt_cover_has_initial_state_unknown(
+    hass_with_tilt_cover_and_send_signals,
+):
+    hass, send_messages = hass_with_tilt_cover_and_send_signals
     state = hass.states.get("cover.test")
     assert state.state == STATE_UNKNOWN
 
