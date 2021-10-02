@@ -16,7 +16,7 @@
                     "currencies": "Valutaer for kontosaldo",
                     "exchange_rates": "Valutakurser"
                 },
-                "description": "Vennligst skriv inn detaljene for API-n\u00f8kkelen din som gitt av Coinbase. Skill flere valutaer med komma (f.eks. \"BTC, EUR\")",
+                "description": "Vennligst skriv inn detaljene for API-n\u00f8kkelen din som gitt av Coinbase.",
                 "title": "Detaljer for Coinbase API-n\u00f8kkel"
             }
         }
@@ -31,6 +31,7 @@
             "init": {
                 "data": {
                     "account_balance_currencies": "Lommeboksaldoer som skal rapporteres.",
+                    "exchange_base": "Standardvaluta for valutakurssensorer.",
                     "exchange_rate_currencies": "Valutakurser som skal rapporteres."
                 },
                 "description": "Juster Coinbase-alternativer"
