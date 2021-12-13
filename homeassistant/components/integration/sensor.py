@@ -8,7 +8,7 @@ from homeassistant.components.sensor import (
     DEVICE_CLASS_ENERGY,
     DEVICE_CLASS_POWER,
     PLATFORM_SCHEMA,
-    STATE_CLASS_TOTAL_INCREASING,
+    STATE_CLASS_TOTAL,
     SensorEntity,
 )
 from homeassistant.const import (
@@ -60,18 +60,21 @@ ICON = "mdi:chart-histogram"
 
 DEFAULT_ROUND = 3
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Optional(CONF_NAME): cv.string,
-        vol.Required(CONF_SOURCE_SENSOR): cv.entity_id,
-        vol.Optional(CONF_ROUND_DIGITS, default=DEFAULT_ROUND): vol.Coerce(int),
-        vol.Optional(CONF_UNIT_PREFIX, default=None): vol.In(UNIT_PREFIXES),
-        vol.Optional(CONF_UNIT_TIME, default=TIME_HOURS): vol.In(UNIT_TIME),
-        vol.Optional(CONF_UNIT_OF_MEASUREMENT): cv.string,
-        vol.Optional(CONF_METHOD, default=TRAPEZOIDAL_METHOD): vol.In(
-            INTEGRATION_METHOD
-        ),
-    }
+PLATFORM_SCHEMA = vol.All(
+    cv.deprecated(CONF_UNIT_OF_MEASUREMENT),
+    PLATFORM_SCHEMA.extend(
+        {
+            vol.Optional(CONF_NAME): cv.string,
+            vol.Required(CONF_SOURCE_SENSOR): cv.entity_id,
+            vol.Optional(CONF_ROUND_DIGITS, default=DEFAULT_ROUND): vol.Coerce(int),
+            vol.Optional(CONF_UNIT_PREFIX, default=None): vol.In(UNIT_PREFIXES),
+            vol.Optional(CONF_UNIT_TIME, default=TIME_HOURS): vol.In(UNIT_TIME),
+            vol.Optional(CONF_UNIT_OF_MEASUREMENT): cv.string,
+            vol.Optional(CONF_METHOD, default=TRAPEZOIDAL_METHOD): vol.In(
+                INTEGRATION_METHOD
+            ),
+        }
+    ),
 )
 
 
@@ -106,7 +109,7 @@ class IntegrationSensor(RestoreEntity, SensorEntity):
         """Initialize the integration sensor."""
         self._sensor_source_id = source_entity
         self._round_digits = round_digits
-        self._state = STATE_UNAVAILABLE
+        self._state = None
         self._method = integration_method
 
         self._name = name if name is not None else f"{source_entity} integral"
@@ -116,13 +119,12 @@ class IntegrationSensor(RestoreEntity, SensorEntity):
         self._unit_of_measurement = unit_of_measurement
         self._unit_prefix = UNIT_PREFIXES[unit_prefix]
         self._unit_time = UNIT_TIME[unit_time]
-        self._attr_state_class = STATE_CLASS_TOTAL_INCREASING
+        self._attr_state_class = STATE_CLASS_TOTAL
 
     async def async_added_to_hass(self):
         """Handle entity which will be added."""
         await super().async_added_to_hass()
-        state = await self.async_get_last_state()
-        if state:
+        if state := await self.async_get_last_state():
             try:
                 self._state = Decimal(state.state)
             except (DecimalException, ValueError) as err:
@@ -153,6 +155,7 @@ class IntegrationSensor(RestoreEntity, SensorEntity):
 
             if (
                 old_state is None
+                or new_state is None
                 or old_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE)
                 or new_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE)
             ):

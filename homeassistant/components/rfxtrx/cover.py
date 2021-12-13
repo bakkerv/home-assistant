@@ -14,8 +14,6 @@ from homeassistant.const import CONF_DEVICES, STATE_OPEN
 from homeassistant.core import callback
 
 from . import (
-    CONF_DATA_BITS,
-    CONF_SIGNAL_REPETITIONS,
     DEFAULT_SIGNAL_REPETITIONS,
     RfxtrxCommandEntity,
     connect_auto_add,
@@ -25,6 +23,8 @@ from . import (
 from .const import (
     COMMAND_OFF_LIST,
     COMMAND_ON_LIST,
+    CONF_DATA_BITS,
+    CONF_SIGNAL_REPETITIONS,
     CONF_VENETIAN_BLIND_MODE,
     CONST_VENETIAN_BLIND_MODE_EU,
     CONST_VENETIAN_BLIND_MODE_US,
@@ -49,8 +49,7 @@ async def async_setup_entry(
 
     entities = []
     for packet_id, entity_info in discovery_info[CONF_DEVICES].items():
-        event = get_rfx_object(packet_id)
-        if event is None:
+        if (event := get_rfx_object(packet_id)) is None:
             _LOGGER.error("Invalid device: %s", packet_id)
             continue
         if not supported(event):
@@ -66,7 +65,7 @@ async def async_setup_entry(
         entity = RfxtrxCover(
             event.device,
             device_id,
-            signal_repetitions=entity_info[CONF_SIGNAL_REPETITIONS],
+            signal_repetitions=entity_info.get(CONF_SIGNAL_REPETITIONS, 1),
             venetian_blind_mode=entity_info.get(CONF_VENETIAN_BLIND_MODE),
         )
         entities.append(entity)

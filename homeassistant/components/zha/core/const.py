@@ -7,7 +7,6 @@ import logging
 import bellows.zigbee.application
 import voluptuous as vol
 from zigpy.config import CONF_DEVICE_PATH  # noqa: F401 # pylint: disable=unused-import
-import zigpy_cc.zigbee.application
 import zigpy_deconz.zigbee.application
 import zigpy_xbee.zigbee.application
 import zigpy_zigate.zigbee.application
@@ -23,6 +22,7 @@ from homeassistant.components.light import DOMAIN as LIGHT
 from homeassistant.components.lock import DOMAIN as LOCK
 from homeassistant.components.number import DOMAIN as NUMBER
 from homeassistant.components.sensor import DOMAIN as SENSOR
+from homeassistant.components.siren import DOMAIN as SIREN
 from homeassistant.components.switch import DOMAIN as SWITCH
 import homeassistant.helpers.config_validation as cv
 
@@ -73,6 +73,7 @@ BAUD_RATES = [2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200, 128000, 2560
 BINDINGS = "bindings"
 
 CHANNEL_ACCELEROMETER = "accelerometer"
+CHANNEL_BINARY_INPUT = "binary_input"
 CHANNEL_ANALOG_INPUT = "analog_input"
 CHANNEL_ANALOG_OUTPUT = "analog_output"
 CHANNEL_ATTRIBUTE = "attribute"
@@ -84,6 +85,8 @@ CHANNEL_ELECTRICAL_MEASUREMENT = "electrical_measurement"
 CHANNEL_EVENT_RELAY = "event_relay"
 CHANNEL_FAN = "fan"
 CHANNEL_HUMIDITY = "humidity"
+CHANNEL_SOIL_MOISTURE = "soil_moisture"
+CHANNEL_LEAF_WETNESS = "leaf_wetness"
 CHANNEL_IAS_ACE = "ias_ace"
 CHANNEL_IAS_WD = "ias_wd"
 CHANNEL_IDENTIFY = "identify"
@@ -118,6 +121,7 @@ PLATFORMS = (
     LOCK,
     NUMBER,
     SENSOR,
+    SIREN,
     SWITCH,
 )
 
@@ -180,7 +184,6 @@ DATA_ZHA_SHUTDOWN_TASK = "zha_shutdown_task"
 DEBUG_COMP_BELLOWS = "bellows"
 DEBUG_COMP_ZHA = "homeassistant.components.zha"
 DEBUG_COMP_ZIGPY = "zigpy"
-DEBUG_COMP_ZIGPY_CC = "zigpy_cc"
 DEBUG_COMP_ZIGPY_ZNP = "zigpy_znp"
 DEBUG_COMP_ZIGPY_DECONZ = "zigpy_deconz"
 DEBUG_COMP_ZIGPY_XBEE = "zigpy_xbee"
@@ -191,7 +194,6 @@ DEBUG_LEVELS = {
     DEBUG_COMP_BELLOWS: logging.DEBUG,
     DEBUG_COMP_ZHA: logging.DEBUG,
     DEBUG_COMP_ZIGPY: logging.DEBUG,
-    DEBUG_COMP_ZIGPY_CC: logging.DEBUG,
     DEBUG_COMP_ZIGPY_ZNP: logging.DEBUG,
     DEBUG_COMP_ZIGPY_DECONZ: logging.DEBUG,
     DEBUG_COMP_ZIGPY_XBEE: logging.DEBUG,
@@ -245,10 +247,6 @@ class RadioType(enum.Enum):
         "deCONZ = dresden elektronik deCONZ protocol: ConBee I/II, RaspBee I/II",
         zigpy_deconz.zigbee.application.ControllerApplication,
     )
-    ti_cc = (
-        "Legacy TI_CC = Texas Instruments Z-Stack ZNP protocol: CC253x, CC26x2, CC13x2",
-        zigpy_cc.zigbee.application.ControllerApplication,
-    )
     zigate = (
         "ZiGate = ZiGate Zigbee radios: PiZiGate, ZiGate USB-TTL, ZiGate WiFi",
         zigpy_zigate.zigbee.application.ControllerApplication,
@@ -287,6 +285,7 @@ class RadioType(enum.Enum):
         return self._desc
 
 
+REPORT_CONFIG_ATTR_PER_REQ = 3
 REPORT_CONFIG_MAX_INT = 900
 REPORT_CONFIG_MAX_INT_BATTERY_SAVE = 10800
 REPORT_CONFIG_MIN_INT = 30
@@ -379,6 +378,7 @@ ZHA_CHANNEL_MSG_BIND = "zha_channel_bind"
 ZHA_CHANNEL_MSG_CFG_RPT = "zha_channel_configure_reporting"
 ZHA_CHANNEL_MSG_DATA = "zha_channel_msg_data"
 ZHA_CHANNEL_CFG_DONE = "zha_channel_cfg_done"
+ZHA_CHANNEL_READS_PER_REQ = 5
 ZHA_GW_MSG = "zha_gateway_message"
 ZHA_GW_MSG_DEVICE_FULL_INIT = "device_fully_initialized"
 ZHA_GW_MSG_DEVICE_INFO = "device_info"

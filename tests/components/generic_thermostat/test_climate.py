@@ -1,6 +1,5 @@
 """The tests for the generic_thermostat."""
 import datetime
-from os import path
 from unittest.mock import patch
 
 import pytest
@@ -43,6 +42,7 @@ from tests.common import (
     assert_setup_component,
     async_fire_time_changed,
     async_mock_service,
+    get_fixture_path,
     mock_restore_cache,
 )
 from tests.components.climate import common
@@ -323,6 +323,21 @@ async def test_set_away_mode_twice_and_restore_prev_temp(hass, setup_comp_2):
     await common.async_set_preset_mode(hass, PRESET_NONE)
     state = hass.states.get(ENTITY)
     assert state.attributes.get("temperature") == 23
+
+
+async def test_set_preset_mode_invalid(hass, setup_comp_2):
+    """Test an invalid mode raises an error and ignore case when checking modes."""
+    await common.async_set_temperature(hass, 23)
+    await common.async_set_preset_mode(hass, "away")
+    state = hass.states.get(ENTITY)
+    assert state.attributes.get("preset_mode") == "away"
+    await common.async_set_preset_mode(hass, "none")
+    state = hass.states.get(ENTITY)
+    assert state.attributes.get("preset_mode") == "none"
+    with pytest.raises(ValueError):
+        await common.async_set_preset_mode(hass, "Sleep")
+    state = hass.states.get(ENTITY)
+    assert state.attributes.get("preset_mode") == "none"
 
 
 async def test_sensor_bad_value(hass, setup_comp_2):
@@ -1471,11 +1486,7 @@ async def test_reload(hass):
     assert len(hass.states.async_all()) == 1
     assert hass.states.get("climate.test") is not None
 
-    yaml_path = path.join(
-        _get_fixtures_base_path(),
-        "fixtures",
-        "generic_thermostat/configuration.yaml",
-    )
+    yaml_path = get_fixture_path("configuration.yaml", "generic_thermostat")
     with patch.object(hass_config, "YAML_CONFIG_FILE", yaml_path):
         await hass.services.async_call(
             GENERIC_THERMOSTAT_DOMAIN,
@@ -1488,7 +1499,3 @@ async def test_reload(hass):
     assert len(hass.states.async_all()) == 1
     assert hass.states.get("climate.test") is None
     assert hass.states.get("climate.reload")
-
-
-def _get_fixtures_base_path():
-    return path.dirname(path.dirname(path.dirname(__file__)))

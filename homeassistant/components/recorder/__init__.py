@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable, Iterable
 import concurrent.futures
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
 import queue
 import sqlite3
 import threading
 import time
-from typing import Any, Callable, NamedTuple
+from typing import Any, NamedTuple
 
 from sqlalchemy import create_engine, event as sqlalchemy_event, exc, func, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -40,6 +42,7 @@ from homeassistant.helpers.entityfilter import (
 from homeassistant.helpers.event import (
     async_track_time_change,
     async_track_time_interval,
+    async_track_utc_time_change,
 )
 from homeassistant.helpers.integration_platform import (
     async_process_integration_platforms,
@@ -49,8 +52,14 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import bind_hass
 import homeassistant.util.dt as dt_util
 
-from . import history, migration, purge, statistics
-from .const import CONF_DB_INTEGRITY_CHECK, DATA_INSTANCE, DOMAIN, SQLITE_URL_PREFIX
+from . import history, migration, purge, statistics, websocket_api
+from .const import (
+    CONF_DB_INTEGRITY_CHECK,
+    DATA_INSTANCE,
+    DOMAIN,
+    MAX_QUEUE_BACKLOG,
+    SQLITE_URL_PREFIX,
+)
 from .models import (
     Base,
     Events,
@@ -68,6 +77,7 @@ from .util import (
     session_scope,
     setup_connection_for_dialect,
     validate_or_move_away_sqlite_database,
+    write_lock_db,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -80,8 +90,6 @@ SERVICE_DISABLE = "disable"
 ATTR_KEEP_DAYS = "keep_days"
 ATTR_REPACK = "repack"
 ATTR_APPLY_FILTER = "apply_filter"
-
-MAX_QUEUE_BACKLOG = 30000
 
 SERVICE_PURGE_SCHEMA = vol.Schema(
     {
@@ -116,6 +124,9 @@ KEEPALIVE_TIME = 30
 # Controls how often we clean up
 # States and Events objects
 EXPIRE_AFTER_COMMITS = 120
+
+DB_LOCK_TIMEOUT = 30
+DB_LOCK_QUEUE_CHECK_TIMEOUT = 1
 
 CONF_AUTO_PURGE = "auto_purge"
 CONF_DB_URL = "db_url"
@@ -168,18 +179,6 @@ CONFIG_SCHEMA = vol.Schema(
     },
     extra=vol.ALLOW_EXTRA,
 )
-
-
-@bind_hass
-async def async_migration_in_progress(hass: HomeAssistant) -> bool:
-    """Determine is a migration is in progress.
-
-    This is a thin wrapper that allows us to change
-    out the implementation later.
-    """
-    if DATA_INSTANCE not in hass.data:
-        return False
-    return hass.data[DATA_INSTANCE].migration_in_progress
 
 
 @bind_hass
@@ -248,6 +247,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     )
     exclude = conf[CONF_EXCLUDE]
     exclude_t = exclude.get(CONF_EVENT_TYPES, [])
+    if EVENT_STATE_CHANGED in exclude_t:
+        _LOGGER.warning(
+            "State change events are excluded, recorder will not record state changes."
+            "This will become an error in Home Assistant Core 2022.2"
+        )
     instance = hass.data[DATA_INSTANCE] = Recorder(
         hass=hass,
         auto_purge=auto_purge,
@@ -264,6 +268,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     _async_register_services(hass, instance)
     history.async_setup(hass)
     statistics.async_setup(hass)
+    websocket_api.async_setup(hass)
     await async_process_integration_platforms(hass, DOMAIN, _process_recorder_platform)
 
     return await instance.async_db_ready
@@ -322,6 +327,19 @@ def _async_register_services(hass, instance):
     )
 
 
+class ClearStatisticsTask(NamedTuple):
+    """Object to store statistics_ids which for which to remove statistics."""
+
+    statistic_ids: list[str]
+
+
+class UpdateStatisticsMetadataTask(NamedTuple):
+    """Object to store statistics_id and unit for update of statistics metadata."""
+
+    statistic_id: str
+    unit_of_measurement: str | None
+
+
 class PurgeTask(NamedTuple):
     """Object to store information about purge task."""
 
@@ -346,8 +364,24 @@ class StatisticsTask(NamedTuple):
     start: datetime
 
 
+class ExternalStatisticsTask(NamedTuple):
+    """An object to insert into the recorder queue to run an external statistics task."""
+
+    metadata: dict
+    statistics: Iterable[dict]
+
+
 class WaitTask:
     """An object to insert into the recorder queue to tell it set the _queue_watch event."""
+
+
+@dataclass
+class DatabaseLockTask:
+    """An object to insert into the recorder queue to prevent writes to the database."""
+
+    database_locked: asyncio.Event
+    database_unlock: threading.Event
+    queue_overflow: bool
 
 
 class Recorder(threading.Thread):
@@ -398,6 +432,8 @@ class Recorder(threading.Thread):
         self.async_migration_event = asyncio.Event()
         self.migration_in_progress = False
         self._queue_watcher = None
+        self._db_supports_row_number = True
+        self._database_lock_task: DatabaseLockTask | None = None
 
         self.enabled = True
 
@@ -447,9 +483,7 @@ class Recorder(threading.Thread):
         if event.event_type in self.exclude_t:
             return False
 
-        entity_id = event.data.get(ATTR_ENTITY_ID)
-
-        if entity_id is None:
+        if (entity_id := event.data.get(ATTR_ENTITY_ID)) is None:
             return True
 
         if isinstance(entity_id, str):
@@ -480,8 +514,7 @@ class Recorder(threading.Thread):
 
     def do_adhoc_statistics(self, **kwargs):
         """Trigger an adhoc statistics run."""
-        start = kwargs.get("start")
-        if not start:
+        if not (start := kwargs.get("start")):
             start = statistics.get_start_time()
         self.queue.put(StatisticsTask(start))
 
@@ -564,10 +597,25 @@ class Recorder(threading.Thread):
             self.queue.put(PerodicCleanupTask())
 
     @callback
-    def async_hourly_statistics(self, now):
+    def async_periodic_statistics(self, now):
         """Trigger the hourly statistics run."""
         start = statistics.get_start_time()
         self.queue.put(StatisticsTask(start))
+
+    @callback
+    def async_clear_statistics(self, statistic_ids):
+        """Clear statistics for a list of statistic_ids."""
+        self.queue.put(ClearStatisticsTask(statistic_ids))
+
+    @callback
+    def async_update_statistics_metadata(self, statistic_id, unit_of_measurement):
+        """Update statistics metadata for a statistic_id."""
+        self.queue.put(UpdateStatisticsMetadataTask(statistic_id, unit_of_measurement))
+
+    @callback
+    def async_external_statistics(self, metadata, stats):
+        """Schedule external statistics."""
+        self.queue.put(ExternalStatisticsTask(metadata, stats))
 
     @callback
     def _async_setup_periodic_tasks(self):
@@ -581,9 +629,9 @@ class Recorder(threading.Thread):
             self.hass, self.async_nightly_tasks, hour=4, minute=12, second=0
         )
 
-        # Compile hourly statistics every hour at *:12
-        async_track_time_change(
-            self.hass, self.async_hourly_statistics, minute=12, second=0
+        # Compile short term statistics every 5 minutes
+        async_track_utc_time_change(
+            self.hass, self.async_periodic_statistics, minute=range(0, 60, 5), second=10
         )
 
     def run(self):
@@ -654,6 +702,8 @@ class Recorder(threading.Thread):
     def _process_one_event_or_recover(self, event):
         """Process an event, reconnect, or recover a malformed database."""
         try:
+            if self._process_one_task(event):
+                return
             self._process_one_event(event)
             return
         except exc.DatabaseError as err:
@@ -748,23 +798,70 @@ class Recorder(threading.Thread):
         # Schedule a new statistics task if this one didn't finish
         self.queue.put(StatisticsTask(start))
 
-    def _process_one_event(self, event):
+    def _run_external_statistics(self, metadata, stats):
+        """Run statistics task."""
+        if statistics.add_external_statistics(self, metadata, stats):
+            return
+        # Schedule a new statistics task if this one didn't finish
+        self.queue.put(ExternalStatisticsTask(metadata, stats))
+
+    def _lock_database(self, task: DatabaseLockTask):
+        @callback
+        def _async_set_database_locked(task: DatabaseLockTask):
+            task.database_locked.set()
+
+        with write_lock_db(self):
+            # Notify that lock is being held, wait until database can be used again.
+            self.hass.add_job(_async_set_database_locked, task)
+            while not task.database_unlock.wait(timeout=DB_LOCK_QUEUE_CHECK_TIMEOUT):
+                if self.queue.qsize() > MAX_QUEUE_BACKLOG * 0.9:
+                    _LOGGER.warning(
+                        "Database queue backlog reached more than 90% of maximum queue "
+                        "length while waiting for backup to finish; recorder will now "
+                        "resume writing to database. The backup can not be trusted and "
+                        "must be restarted"
+                    )
+                    task.queue_overflow = True
+                    break
+        _LOGGER.info(
+            "Database queue backlog reached %d entries during backup",
+            self.queue.qsize(),
+        )
+
+    def _process_one_task(self, event) -> bool:
         """Process one event."""
         if isinstance(event, PurgeTask):
             self._run_purge(event.purge_before, event.repack, event.apply_filter)
-            return
+            return True
         if isinstance(event, PurgeEntitiesTask):
             self._run_purge_entities(event.entity_filter)
-            return
+            return True
         if isinstance(event, PerodicCleanupTask):
             perodic_db_cleanups(self)
-            return
+            return True
         if isinstance(event, StatisticsTask):
             self._run_statistics(event.start)
-            return
+            return True
+        if isinstance(event, ClearStatisticsTask):
+            statistics.clear_statistics(self, event.statistic_ids)
+            return True
+        if isinstance(event, UpdateStatisticsMetadataTask):
+            statistics.update_statistics_metadata(
+                self, event.statistic_id, event.unit_of_measurement
+            )
+            return True
+        if isinstance(event, ExternalStatisticsTask):
+            self._run_external_statistics(event.metadata, event.statistics)
+            return True
         if isinstance(event, WaitTask):
             self._queue_watch.set()
-            return
+            return True
+        if isinstance(event, DatabaseLockTask):
+            self._lock_database(event)
+            return True
+        return False
+
+    def _process_one_event(self, event):
         if event.event_type == EVENT_TIME_CHANGED:
             self._keepalive_count += 1
             if self._keepalive_count >= KEEPALIVE_TIME:
@@ -931,6 +1028,42 @@ class Recorder(threading.Thread):
         self.queue.put(WaitTask())
         self._queue_watch.wait()
 
+    async def lock_database(self) -> bool:
+        """Lock database so it can be backed up safely."""
+        if self._database_lock_task:
+            _LOGGER.warning("Database already locked")
+            return False
+
+        database_locked = asyncio.Event()
+        task = DatabaseLockTask(database_locked, threading.Event(), False)
+        self.queue.put(task)
+        try:
+            await asyncio.wait_for(database_locked.wait(), timeout=DB_LOCK_TIMEOUT)
+        except asyncio.TimeoutError as err:
+            task.database_unlock.set()
+            raise TimeoutError(
+                f"Could not lock database within {DB_LOCK_TIMEOUT} seconds."
+            ) from err
+        self._database_lock_task = task
+        return True
+
+    @callback
+    def unlock_database(self) -> bool:
+        """Unlock database.
+
+        Returns true if database lock has been held throughout the process.
+        """
+        if not self._database_lock_task:
+            _LOGGER.warning("Database currently not locked")
+            return False
+
+        self._database_lock_task.database_unlock.set()
+        success = not self._database_lock_task.queue_overflow
+
+        self._database_lock_task = None
+
+        return success
+
     def _setup_connection(self):
         """Ensure database is ready to fly."""
         kwargs = {}
@@ -939,6 +1072,7 @@ class Recorder(threading.Thread):
         def setup_recorder_connection(dbapi_connection, connection_record):
             """Dbapi specific connection settings."""
             setup_connection_for_dialect(
+                self,
                 self.engine.dialect.name,
                 dbapi_connection,
                 not self._completed_first_database_setup,
@@ -994,20 +1128,21 @@ class Recorder(threading.Thread):
     def _schedule_compile_missing_statistics(self, session: Session) -> None:
         """Add tasks for missing statistics runs."""
         now = dt_util.utcnow()
-        last_hour = now.replace(minute=0, second=0, microsecond=0)
+        last_period_minutes = now.minute - now.minute % 5
+        last_period = now.replace(minute=last_period_minutes, second=0, microsecond=0)
         start = now - timedelta(days=self.keep_days)
         start = start.replace(minute=0, second=0, microsecond=0)
 
         # Find the newest statistics run, if any
         if last_run := session.query(func.max(StatisticsRuns.start)).scalar():
-            start = max(start, process_timestamp(last_run) + timedelta(hours=1))
+            start = max(start, process_timestamp(last_run) + timedelta(minutes=5))
 
         # Add tasks
-        while start < last_hour:
-            end = start + timedelta(hours=1)
+        while start < last_period:
+            end = start + timedelta(minutes=5)
             _LOGGER.debug("Compiling missing statistics for %s-%s", start, end)
             self.queue.put(StatisticsTask(start))
-            start = start + timedelta(hours=1)
+            start = end
 
     def _end_session(self):
         """End the recorder session."""
@@ -1028,3 +1163,8 @@ class Recorder(threading.Thread):
         self.hass.add_job(self._async_stop_queue_watcher_and_event_listener)
         self._end_session()
         self._close_connection()
+
+    @property
+    def recording(self):
+        """Return if the recorder is recording."""
+        return self._event_listener is not None
