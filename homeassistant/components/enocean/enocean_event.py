@@ -1,11 +1,11 @@
-"""Support for EnOcean buttons"""
+"""Support for EnOcean buttons."""
 from __future__ import annotations
-from homeassistant.core import HomeAssistant
+
 from enocean.utils import to_hex_string
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_DEVICE_CLASS, CONF_ID, CONF_NAME
+from homeassistant.const import CONF_ID, CONF_NAME
 from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
 
@@ -22,16 +22,20 @@ EVENT_SCHEMA_DATA = {
 
 EVENT_SCHEMA = vol.Schema(EVENT_SCHEMA_DATA)
 
+
 async def async_setup_events(hass: HomeAssistant, configEntry: ConfigEntry):
-    if not CONF_EVENTS in configEntry.data:
+    """Set up events."""
+
+    if CONF_EVENTS not in configEntry.data:
         return
-    hass.data[DATA_ENOCEAN][CONF_EVENTS] = dict()
+    hass.data[DATA_ENOCEAN][CONF_EVENTS] = {}
     for config in configEntry.data[CONF_EVENTS].values():
         new_event = create_entity_from_config(config, hass, configEntry.entry_id)
         hass.async_create_task(new_event.async_update_device_registry())
 
 
 def create_entity_from_config(config, hass, config_entry_id):
+    """Create entity from provided configuration."""
     dev_id = config.get(CONF_ID)
     dev_name = config.get(CONF_NAME)
 
@@ -121,6 +125,7 @@ class EnOceanEvent(EnOceanEntity):
 
     @property
     def device_info(self):
+        """Return device information."""
         return {
             "identifiers": {
                 # Serial numbers are unique identifiers within a specific domain
@@ -131,10 +136,12 @@ class EnOceanEvent(EnOceanEntity):
 
     @property
     def unique_id(self):
+        """Return unique identifier."""
         return f"event-{to_hex_string(self.dev_id)}"
 
     def disconnect(self):
-        if self.disconnect_dispatcher != None:
+        """Disconnect from dispatcher."""
+        if self.disconnect_dispatcher is not None:
             self.disconnect_dispatcher()
             self.disconnect_dispatcher = None
 

@@ -15,14 +15,13 @@ from homeassistant.components.cover import (
     SUPPORT_CLOSE,
     SUPPORT_OPEN,
     SUPPORT_SET_POSITION,
+    SUPPORT_SET_TILT_POSITION,
     SUPPORT_STOP,
     CoverEntity,
-    SUPPORT_SET_TILT_POSITION,
 )
-from homeassistant.const import CONF_COVERS, CONF_DEVICES, CONF_ID, CONF_NAME, CONF_TYPE
+from homeassistant.const import CONF_COVERS, CONF_ID, CONF_NAME
 import homeassistant.helpers.config_validation as cv
 
-from .const import COVER_ALL_CHANNELS
 from .device import EnOceanEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -84,7 +83,7 @@ async def async_setup_entry(
 
 
 def create_entity_from_config(config):
-    """Create cover entity from configuration"""
+    """Create cover entity from configuration."""
     sender_id = config.get(CONF_SENDER_ID)
     dev_name = config.get(CONF_NAME)
     dev_id = config.get(CONF_ID)
@@ -142,7 +141,10 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
                 else:
                     self.current_position = 100 - packet.parsed["BSP"]["raw_value"]
                 _LOGGER.debug(
-                    f"Updated position {mode_of_position} {packet.parsed['BSP']['raw_value']} {self.current_position}"
+                    "Updated position %d %d %d",
+                    mode_of_position,
+                    packet.parsed["BSP"]["raw_value"],
+                    self.current_position,
                 )
             if "AVF" in packet.parsed and packet.parsed["AVF"]["raw_value"] == 1:
                 angle_sign = packet.parsed["AS"]["raw_value"]  # 0 positive, 1 negative
@@ -152,17 +154,17 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
                     angle_value * 1 if angle_sign == 0 else -1
                 )
             if "EP" in packet.parsed:
-                ep = packet.parsed["EP"]["raw_value"]  # EP = End Position
-                if ep == 2:
+                end_position = packet.parsed["EP"]["raw_value"]  # EP = End Position
+                if end_position == 2:
                     self.closed = False
-                if ep == 3:
+                if end_position == 3:
                     self.closed = True
             if "ST" in packet.parsed:
                 self.cover_state = packet.parsed["ST"]["raw_value"]
             self.schedule_update_ha_state()
 
     def angle_to_tilt(self, angle):
-        """ Transform an angle between -180 and 180 to an tile value (0--100)"""
+        """Transform an angle between -180 and 180 to an tile value (0--100)."""
         # -180 == shut, 180 == open
         # HA: 0 == closed, 100 == open
         if angle < -180 or angle > 180:
@@ -170,15 +172,17 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
         return int((angle + 180) / 3.6)
 
     def tilt_to_angle(self, tilt):
+        """Transform an tilt value (0--100) to an angle between -180 and 180."""
         if tilt is None or tilt > 100 or tilt < 0:
             return 0
         return int((tilt * 3.6) - 180)
 
     def encode_angle(self, tilt: int) -> int:
+        """Encode the tilt."""
         angle = self.tilt_to_angle(tilt)
         # angle -180 .. 180
-        fb = 0x0 if angle >= 0 else 0x80
-        return fb | (abs(angle) >> 1)
+        first_bit = 0x0 if angle >= 0 else 0x80
+        return first_bit | (abs(angle) >> 1)
 
     @property
     def current_cover_position(self):
@@ -199,7 +203,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
 
     @property
     def current_cover_tilt_position(self):
-        """Return current cover tilt position"""
+        """Return current cover tilt position."""
         return self.tilt
 
     @property
@@ -310,6 +314,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
         await self.async_send_packet(packet)
 
     async def async_update(self):
+        """Update state."""
         await self.async_request_current_state()
 
     async def async_request_current_state(self):
@@ -334,6 +339,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
 
     @property
     def device_info(self):
+        """Provide device info."""
         return {
             "identifiers": {
                 # Serial numbers are unique identifiers within a specific domain
@@ -344,6 +350,7 @@ class EnOceanCover(EnOceanEntity, CoverEntity):
 
     @property
     def unique_id(self):
+        """Provide unique identifier."""
         return f"cover-{to_hex_string(self.dev_id)}"
 
 
@@ -470,6 +477,7 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
 
     @property
     def device_info(self):
+        """Return device information."""
         return {
             "identifiers": {
                 # Serial numbers are unique identifiers within a specific domain
@@ -480,7 +488,9 @@ class EnOceanVldCover(EnOceanEntity, CoverEntity):
 
     @property
     def unique_id(self):
+        """Return unique identifier."""
         return f"cover-{to_hex_string(self.dev_id)}"
 
     async def async_update(self):
+        """Update state."""
         await self.async_request_current_state()

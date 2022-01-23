@@ -1319,7 +1319,7 @@ py-canary==0.5.1
 py-cpuinfo==8.0.0
 
 # homeassistant.components.enocean
-py-enocean==0.52
+py-enocean==0.53
 
 # homeassistant.components.melissa
 py-melissa-climate==2.1.4
